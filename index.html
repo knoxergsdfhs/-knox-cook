@@ -154,29 +154,53 @@ async function pbkdf2(password, salt) {
   return Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, "0")).join("");
 }
 async function login(identifier, password) {
-  const id = String(identifier).trim().toLowerCase();
-  const r = await fetch(`${API}/api/users?id=${encodeURIComponent(id)}`);
-  if (!r.ok) throw new Error("User not found");
-  const j = await r.json();
-  const profile = j.profile;
-  if (!profile?.passwordHash) throw new Error("This account hasn't set a password");
-  const hash = await pbkdf2(password, profile.passwordSalt || "");
-  if (hash !== profile.passwordHash) throw new Error("Wrong password");
-  setSession({ id, name: profile.name || id.split("@")[0], email: profile.email });
+  // Use the shared Nexus login endpoint — server-side password verification.
+  const r = await fetch(`${API}/api/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: String(identifier).trim().toLowerCase(), password }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.ok) {
+    const msg = j.error || "";
+    if (/no account/i.test(msg)) throw new Error("No account with that email. Create one below.");
+    if (/wrong password/i.test(msg)) throw new Error("Wrong password.");
+    throw new Error(msg || `Sign-in failed (${r.status})`);
+  }
+  const profile = j.user?.profile || {};
+  const id = j.user?.id || String(identifier).trim().toLowerCase();
+  setSession({ id, name: profile.name || id.split("@")[0], email: profile.email || id, profile });
   return profile;
 }
 async function createAccount(identifier, password) {
   const id = String(identifier).trim().toLowerCase();
   if (password.length < 6) throw new Error("Password must be at least 6 chars");
-  const check = await fetch(`${API}/api/users?id=${encodeURIComponent(id)}`);
+  // Probe — if error is "wrong password" the account already exists
+  const probeRes = await fetch(`${API}/api/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: id, password: "__probe__" + Math.random() }),
+  });
+  const probeJson = await probeRes.json().catch(() => ({}));
+  if (/wrong password/i.test(probeJson.error || "")) {
+    throw new Error("That email already has an account. Try signing in instead.");
+  }
+  // No account — create it. Use crypto-random salt (hex) to match server encoding.
+  const saltBytes = crypto.getRandomValues(new Uint8Array(16));
+  const saltHex = Array.from(saltBytes).map(b => b.toString(16).padStart(2, "0")).join("");
+  const passwordHash = await pbkdf2(password, saltHex);
+  // Fetch any existing skeleton profile so we don't overwrite prior data
   let existing = null;
-  if (check.ok) { try { existing = (await check.json()).profile; } catch {} }
-  const salt = Math.random().toString(36).slice(2, 18);
-  const passwordHash = await pbkdf2(password, salt);
-  const profile = existing && existing.passwordHash
-    ? null
-    : { ...(existing || {}), email: id.includes("@") ? id : null, phone: !id.includes("@") ? id : null, name: existing?.name || id.split("@")[0] || id, passwordHash, passwordSalt: salt, createdAt: existing?.createdAt || new Date().toISOString() };
-  if (!profile) throw new Error("This account already exists. Try signing in.");
+  try { const ex = await fetch(`${API}/api/users?id=${encodeURIComponent(id)}`); if (ex.ok) existing = (await ex.json()).profile; } catch {}
+  const profile = {
+    ...(existing || {}),
+    email: id.includes("@") ? id : null,
+    phone: !id.includes("@") ? id : null,
+    name: existing?.name || id.split("@")[0] || id,
+    passwordHash,
+    passwordSalt: saltHex,
+    createdAt: existing?.createdAt || new Date().toISOString(),
+  };
   const r = await fetch(`${API}/api/users`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, profile }) });
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Couldn't create account");
   return await login(identifier, password);
@@ -248,10 +272,12 @@ function startProgress(host, kind) {
 }
 
 // ---- state + routes ----------------------------------------------
-let view = "library";  // library | recipe | edit | new | auth
+let view = "library";  // library | recipe | edit | shopping | auth
 let currentRecipe = null;
-let composeMode = "ai";   // ai | url
+let composeMode = "ai";   // ai | url | fridge
 let searchQuery = "";
+let librarySort = "newest"; // newest | most-made | most-viewed
+let shoppingCart = JSON.parse(localStorage.getItem("knoxcook:cart") || "[]"); // array of recipe ids
 const EXAMPLES = ["Tonkotsu ramen with chashu", "30-minute weeknight tacos al pastor", "Pumpkin spice latte from scratch", "Sourdough discard pancakes", "Vegan chocolate chip cookies", "Thai basil chicken (pad krapow)", "Crispy oven-fried buffalo cauliflower", "Classic French onion soup"];
 
 function render() {
@@ -264,31 +290,141 @@ function render() {
   if (view === "auth") return renderAuth(el);
   if (view === "recipe") return renderRecipe(el);
   if (view === "edit") return renderEdit(el);
+  if (view === "shopping") return renderShopping(el);
   return renderLibrary(el);
+}
+
+async function renderShopping(el) {
+  el.innerHTML = `
+    <div style="margin-bottom:14px"><button class="btn-ghost" id="back">← Library</button></div>
+    <div class="page-title">Shopping list</div>
+    <div class="page-sub">Recipes you've added to your list — ingredients combined + checkable.</div>
+    <div id="shop-host"><div class="empty"><div class="spinner"></div></div></div>
+  `;
+  document.getElementById("back").addEventListener("click", () => { view = "library"; render(); });
+  const host = document.getElementById("shop-host");
+  if (shoppingCart.length === 0) {
+    host.innerHTML = `<div class="empty"><div class="empty-icon">🛒</div><h2>Cart is empty</h2><p>Open any recipe and tap "Add to shopping list" to start building.</p></div>`;
+    return;
+  }
+  try {
+    const recs = [];
+    for (const id of shoppingCart) {
+      try { const r = await getRecipe(id); if (r) recs.push(r); } catch {}
+    }
+    // Consolidate ingredients across recipes (group by lowercased name)
+    const groups = {};
+    for (const r of recs) {
+      for (const ing of (r.ingredients || [])) {
+        const key = (ing.name || "").toLowerCase().trim();
+        if (!key) continue;
+        if (!groups[key]) groups[key] = { name: ing.name, items: [] };
+        groups[key].items.push({ qty: ing.qty, unit: ing.unit, recipe: r.title, notes: ing.notes });
+      }
+    }
+    const groupList = Object.values(groups).sort((a, b) => a.name.localeCompare(b.name));
+    // Checked state in localStorage
+    const checkedKey = "knoxcook:cart-checked";
+    let checked = {};
+    try { checked = JSON.parse(localStorage.getItem(checkedKey) || "{}"); } catch {}
+    host.innerHTML = `
+      <div style="background:white;border:1px solid var(--border);border-radius:12px;padding:14px 18px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <div style="font-size:13px"><strong>${recs.length}</strong> recipe${recs.length === 1 ? "" : "s"} · <strong>${groupList.length}</strong> ingredient${groupList.length === 1 ? "" : "s"}</div>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-secondary" id="shop-print" style="padding:7px 14px;font-size:12px">🖨 Print</button>
+          <button class="btn btn-secondary" id="shop-clear" style="padding:7px 14px;font-size:12px">🗑 Clear all</button>
+        </div>
+      </div>
+      <div style="background:white;border:1px solid var(--border);border-radius:12px;padding:14px 18px;margin-bottom:14px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--accent);margin-bottom:10px">From these recipes</div>
+        ${recs.map(r => `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border-soft);font-size:13px"><span>${escapeHtml(r.title)}</span><button class="btn-ghost" data-remove="${r.id}" style="padding:2px 8px;font-size:11px;color:#dc2626">Remove</button></div>`).join("")}
+      </div>
+      <div style="background:white;border:1px solid var(--border);border-radius:12px;padding:14px 18px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--accent);margin-bottom:10px">Ingredients</div>
+        ${groupList.map(g => {
+          const isChecked = !!checked[g.name];
+          const qtySummary = g.items.map(i => `${i.qty || ""}${i.unit ? " " + i.unit : ""}`.trim()).filter(Boolean).join(" + ");
+          const recipeRefs = [...new Set(g.items.map(i => i.recipe))].join(", ");
+          return `<label style="display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid var(--border-soft);cursor:pointer;font-size:14px${isChecked ? ";opacity:0.4;text-decoration:line-through" : ""}">
+            <input type="checkbox" data-chk="${escapeHtml(g.name)}" ${isChecked ? "checked" : ""} style="margin-top:3px;width:18px;height:18px;accent-color:var(--primary)" />
+            <div style="flex:1">
+              <div><strong>${escapeHtml(g.name)}</strong>${qtySummary ? ` <span style="color:var(--accent);font-weight:600">— ${escapeHtml(qtySummary)}</span>` : ""}</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px">for: ${escapeHtml(recipeRefs)}</div>
+            </div>
+          </label>`;
+        }).join("")}
+      </div>
+    `;
+    document.getElementById("shop-print").addEventListener("click", () => window.print());
+    document.getElementById("shop-clear").addEventListener("click", () => {
+      if (!confirm(`Clear shopping cart? (${recs.length} recipes)`)) return;
+      shoppingCart = []; localStorage.setItem("knoxcook:cart", "[]"); localStorage.removeItem(checkedKey);
+      view = "library"; render();
+    });
+    host.querySelectorAll("[data-remove]").forEach(b => b.addEventListener("click", () => {
+      shoppingCart = shoppingCart.filter(x => x !== b.dataset.remove);
+      localStorage.setItem("knoxcook:cart", JSON.stringify(shoppingCart));
+      renderShopping(el);
+    }));
+    host.querySelectorAll("[data-chk]").forEach(cb => cb.addEventListener("change", (e) => {
+      checked[cb.dataset.chk] = e.target.checked;
+      localStorage.setItem(checkedKey, JSON.stringify(checked));
+      renderShopping(el);
+    }));
+  } catch (e) {
+    host.innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><h2>Couldn't load</h2><p>${escapeHtml(e.message)}</p></div>`;
+  }
 }
 
 function renderLibrary(el) {
   el.innerHTML = `
     <div class="page-title">All recipes</div>
     <div class="page-sub">Public library — anyone can browse, anyone can add. Type a request, AI generates + saves it for everyone.</div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+      <span style="font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:0.5px">Sort:</span>
+      <button class="ex-chip ${librarySort === 'newest' ? 'active' : ''}" data-sort="newest">Newest</button>
+      <button class="ex-chip ${librarySort === 'most-made' ? 'active' : ''}" data-sort="most-made">Most made</button>
+      <button class="ex-chip ${librarySort === 'most-viewed' ? 'active' : ''}" data-sort="most-viewed">Trending</button>
+      <div style="flex:1"></div>
+      ${shoppingCart.length > 0 ? `<button class="btn btn-primary" id="shop-btn" style="padding:7px 14px;font-size:12px">🛒 Shopping list (${shoppingCart.length})</button>` : ""}
+    </div>
     <div class="compose">
       <div class="compose-tabs">
         <button class="compose-tab ${composeMode === "ai" ? "active" : ""}" data-tab="ai">✨ AI generate</button>
-        <button class="compose-tab ${composeMode === "url" ? "active" : ""}" data-tab="url">🔗 Import from URL</button>
+        <button class="compose-tab ${composeMode === "url" ? "active" : ""}" data-tab="url">🔗 Import URL</button>
+        <button class="compose-tab ${composeMode === "fridge" ? "active" : ""}" data-tab="fridge">📷 Cook from my fridge</button>
+        <button class="compose-tab" id="random-btn" title="Random recipe">🎲 Random</button>
       </div>
-      <div class="compose-row">
-        <input type="text" id="prompt" placeholder="${composeMode === "ai" ? "e.g. 'classic chocolate chip cookies' or 'one-pot creamy chicken pasta'" : "https://allrecipes.com/recipe/..."}" />
-        <button class="btn btn-primary" id="go-btn">${composeMode === "ai" ? "Generate" : "Import"}</button>
-      </div>
-      <div id="compose-progress"></div>
-      ${composeMode === "ai" ? `<div class="examples">${EXAMPLES.map(e => `<button class="ex-chip" data-ex="${escapeHtml(e)}">${escapeHtml(e)}</button>`).join("")}</div>` : `<div class="examples" style="font-size:11px;color:var(--muted);margin-top:8px">Paste a URL from any recipe blog. AI extracts the title, ingredients, steps, and saves it to the public library.</div>`}
+      ${composeMode === "fridge" ? `
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:13px;color:var(--muted)">Take a photo of your fridge / pantry / counter. AI identifies what you have + suggests recipes you can make right now.</div>
+          <label class="btn btn-primary" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;align-self:flex-start">
+            📷 Take or upload photo
+            <input type="file" id="fridge-photo" accept="image/*" capture="environment" style="display:none" />
+          </label>
+          <input type="text" id="fridge-extras" placeholder="Optional: pantry staples you have (rice, pasta, canned tomatoes...)" />
+          <div id="compose-progress"></div>
+          <div id="fridge-result"></div>
+        </div>
+      ` : `
+        <div class="compose-row">
+          <input type="text" id="prompt" placeholder="${composeMode === "ai" ? "e.g. 'classic chocolate chip cookies' or 'one-pot creamy chicken pasta'" : "https://allrecipes.com/recipe/..."}" />
+          <button class="btn btn-primary" id="go-btn">${composeMode === "ai" ? "Generate" : "Import"}</button>
+        </div>
+        <div id="compose-progress"></div>
+        ${composeMode === "ai" ? `<div class="examples">${EXAMPLES.map(e => `<button class="ex-chip" data-ex="${escapeHtml(e)}">${escapeHtml(e)}</button>`).join("")}</div>` : `<div class="examples" style="font-size:11px;color:var(--muted);margin-top:8px">Paste a URL from any recipe blog. AI extracts the title, ingredients, steps, and saves it to the public library.</div>`}
+      `}
     </div>
     <div id="recipe-grid"></div>
   `;
   el.querySelectorAll(".compose-tab[data-tab]").forEach(b => b.addEventListener("click", () => { composeMode = b.dataset.tab; renderLibrary(el); }));
   el.querySelectorAll("[data-ex]").forEach(b => b.addEventListener("click", () => { document.getElementById("prompt").value = b.dataset.ex; document.getElementById("prompt").focus(); }));
-  document.getElementById("go-btn").addEventListener("click", composeMode === "ai" ? runGenerate : runImport);
-  document.getElementById("prompt").addEventListener("keydown", e => { if (e.key === "Enter") (composeMode === "ai" ? runGenerate : runImport)(); });
+  document.getElementById("go-btn")?.addEventListener("click", composeMode === "ai" ? runGenerate : runImport);
+  document.getElementById("prompt")?.addEventListener("keydown", e => { if (e.key === "Enter") (composeMode === "ai" ? runGenerate : runImport)(); });
+  document.getElementById("random-btn")?.addEventListener("click", openRandomRecipe);
+  document.getElementById("fridge-photo")?.addEventListener("change", runFridge);
+  el.querySelectorAll("[data-sort]").forEach(b => b.addEventListener("click", () => { librarySort = b.dataset.sort; renderLibrary(el); }));
+  document.getElementById("shop-btn")?.addEventListener("click", () => { view = "shopping"; render(); });
 
   const gridHost = document.getElementById("recipe-grid");
   gridHost.innerHTML = `<div class="empty"><div class="spinner"></div><br>Loading recipes…</div>`;
@@ -314,6 +450,175 @@ function renderLibrary(el) {
       </div>`).join("")}</div>`;
     gridHost.querySelectorAll(".card[data-rid]").forEach(c => c.addEventListener("click", () => openRecipe(c.dataset.rid)));
   }).catch(e => { gridHost.innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><h2>Couldn't load</h2><p>${escapeHtml(e.message || "")}</p></div>`; });
+}
+
+// Full-screen cooking mode: one step at a time, huge text, parsed timers
+function openCookingMode(recipe) {
+  const overlay = document.createElement("div");
+  overlay.style.cssText = "position:fixed;inset:0;background:#1f1109;color:white;z-index:9999;display:flex;flex-direction:column;padding:0;overflow:hidden";
+  let stepIdx = 0;
+  const steps = recipe.steps || [];
+  let activeTimers = []; // [{ remainingMs, total, label, intervalId }]
+
+  function parseTimers(stepText) {
+    // Find patterns like "5 min", "10 minutes", "30 sec", "2 hours"
+    const re = /(\d+(?:[-–]\d+)?)\s*(min|minute|minutes|sec|second|seconds|hr|hour|hours)\b/gi;
+    const matches = [];
+    let m;
+    while ((m = re.exec(stepText)) !== null) {
+      const rng = m[1].split(/[-–]/);
+      const num = parseInt(rng[rng.length - 1]); // use the upper bound for safety
+      let secs = 0;
+      const u = m[2].toLowerCase();
+      if (u.startsWith("sec")) secs = num;
+      else if (u.startsWith("min")) secs = num * 60;
+      else if (u.startsWith("hr") || u.startsWith("hour")) secs = num * 3600;
+      matches.push({ label: m[0], secs });
+    }
+    return matches;
+  }
+
+  function fmt(s) { const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60); const sec = s % 60; return h ? `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}` : `${m}:${String(sec).padStart(2, "0")}`; }
+
+  function startTimer(secs, label) {
+    const t = { remainingMs: secs * 1000, total: secs, label, paused: false };
+    t.intervalId = setInterval(() => {
+      if (t.paused) return;
+      t.remainingMs -= 1000;
+      renderTimers();
+      if (t.remainingMs <= 0) {
+        clearInterval(t.intervalId);
+        try { new Audio("data:audio/wav;base64,UklGRkQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAAAAA==").play(); } catch {}
+        if (navigator.vibrate) navigator.vibrate([300, 100, 300, 100, 300]);
+        alert(`⏰ Timer done: ${label}`);
+        activeTimers = activeTimers.filter(x => x !== t);
+        renderTimers();
+      }
+    }, 1000);
+    activeTimers.push(t);
+    renderTimers();
+  }
+
+  function renderTimers() {
+    const host = overlay.querySelector("#timers");
+    if (!host) return;
+    if (activeTimers.length === 0) { host.innerHTML = ""; return; }
+    host.innerHTML = activeTimers.map((t, i) => `
+      <div style="background:rgba(255,255,255,0.08);border-radius:12px;padding:10px 16px;display:flex;align-items:center;gap:10px">
+        <span style="font-size:24px;font-weight:800;font-variant-numeric:tabular-nums;color:${t.remainingMs / 1000 < 30 ? "#fca5a5" : "#fbbf24"}">${fmt(Math.max(0, Math.ceil(t.remainingMs / 1000)))}</span>
+        <span style="font-size:12px;opacity:0.7">${escapeHtml(t.label)}</span>
+        <button class="cm-timer-pause" data-i="${i}" style="background:rgba(255,255,255,0.1);border:none;color:white;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:11px">${t.paused ? "▶" : "⏸"}</button>
+        <button class="cm-timer-stop" data-i="${i}" style="background:rgba(220,38,38,0.3);border:none;color:white;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:11px">✕</button>
+      </div>
+    `).join("");
+    host.querySelectorAll(".cm-timer-pause").forEach(b => b.addEventListener("click", () => { const i = Number(b.dataset.i); activeTimers[i].paused = !activeTimers[i].paused; renderTimers(); }));
+    host.querySelectorAll(".cm-timer-stop").forEach(b => b.addEventListener("click", () => { const i = Number(b.dataset.i); clearInterval(activeTimers[i].intervalId); activeTimers.splice(i, 1); renderTimers(); }));
+  }
+
+  function renderStep() {
+    const step = steps[stepIdx] || "Done!";
+    const timers = parseTimers(step);
+    overlay.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 22px;border-bottom:1px solid rgba(255,255,255,0.1)">
+        <div style="font-size:13px;opacity:0.7">${escapeHtml(recipe.title)}</div>
+        <div style="font-size:13px;opacity:0.7">Step ${Math.min(stepIdx + 1, steps.length)} of ${steps.length}</div>
+        <button id="cm-exit" style="background:transparent;border:none;color:white;font-size:20px;cursor:pointer">✕</button>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:30px;text-align:center">
+        <div style="font-size:64px;font-weight:800;color:#fbbf24;margin-bottom:24px">${stepIdx + 1}</div>
+        <div style="font-size:28px;line-height:1.4;max-width:760px;font-weight:500">${escapeHtml(step)}</div>
+        ${timers.length > 0 ? `<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:26px">${timers.map(t => `<button class="cm-set-timer" data-secs="${t.secs}" data-label="${escapeHtml(t.label)}" style="background:linear-gradient(135deg,#fbbf24,#dc2626);border:none;color:white;padding:14px 24px;border-radius:14px;cursor:pointer;font-weight:700;font-size:15px">⏱ Start ${escapeHtml(t.label)}</button>`).join("")}</div>` : ""}
+      </div>
+      <div id="timers" style="padding:0 22px;display:flex;flex-direction:column;gap:8px"></div>
+      <div style="display:flex;gap:12px;padding:22px;border-top:1px solid rgba(255,255,255,0.1)">
+        <button id="cm-prev" ${stepIdx === 0 ? "disabled" : ""} style="flex:1;background:rgba(255,255,255,0.1);border:none;color:white;padding:18px;border-radius:12px;cursor:pointer;font-size:16px;font-weight:600;opacity:${stepIdx === 0 ? "0.4" : "1"}">← Back</button>
+        <button id="cm-next" style="flex:2;background:linear-gradient(135deg,#fbbf24,#dc2626);border:none;color:white;padding:18px;border-radius:12px;cursor:pointer;font-size:18px;font-weight:800">${stepIdx >= steps.length - 1 ? "Done ✓" : "Next →"}</button>
+      </div>
+    `;
+    overlay.querySelector("#cm-exit").addEventListener("click", closeOverlay);
+    overlay.querySelector("#cm-prev").addEventListener("click", () => { if (stepIdx > 0) { stepIdx--; renderStep(); }});
+    overlay.querySelector("#cm-next").addEventListener("click", () => { if (stepIdx >= steps.length - 1) { closeOverlay(); return; } stepIdx++; renderStep(); });
+    overlay.querySelectorAll(".cm-set-timer").forEach(b => b.addEventListener("click", () => startTimer(Number(b.dataset.secs), b.dataset.label)));
+    renderTimers();
+  }
+
+  function closeOverlay() {
+    activeTimers.forEach(t => clearInterval(t.intervalId));
+    overlay.remove();
+    document.removeEventListener("keydown", keyHandler);
+  }
+  function keyHandler(e) {
+    if (e.key === "Escape") closeOverlay();
+    if (e.key === "ArrowRight" || e.key === " ") { e.preventDefault(); if (stepIdx < steps.length - 1) { stepIdx++; renderStep(); } else closeOverlay(); }
+    if (e.key === "ArrowLeft") { if (stepIdx > 0) { stepIdx--; renderStep(); } }
+  }
+  document.addEventListener("keydown", keyHandler);
+  document.body.appendChild(overlay);
+  renderStep();
+}
+
+async function openRandomRecipe() {
+  showToast("Rolling…", 1500);
+  try {
+    const recs = await listRecipes("");
+    if (recs.length === 0) return showToast("No recipes yet — generate one first", 3000, "info");
+    openRecipe(recs[Math.floor(Math.random() * recs.length)].id);
+  } catch (e) { showToast(e.message, 4000, "error"); }
+}
+
+async function runFridge(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async () => {
+    const dataUrl = String(reader.result || "");
+    const m = dataUrl.match(/^data:(image\/[a-z+]+);base64,(.+)$/);
+    if (!m) return showToast("Couldn't read photo", 3000, "error");
+    const extras = document.getElementById("fridge-extras")?.value || "";
+    const progress = startProgress(document.getElementById("compose-progress"), "gen");
+    const host = document.getElementById("fridge-result");
+    host.innerHTML = "";
+    try {
+      const r = await fetch(`${API}/api/ai/cook-fridge`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ imageBase64: m[2], extras }),
+      });
+      const j = await r.json();
+      progress.done();
+      if (!r.ok || j.ok === false) throw new Error(j.error || "Analysis failed");
+      host.innerHTML = `
+        <div style="background:white;border:1px solid var(--border);border-radius:12px;padding:14px;margin-top:12px">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--accent);margin-bottom:6px">What AI saw</div>
+          <div style="font-size:13px;color:var(--muted);margin-bottom:10px">${escapeHtml(j.summary || "")}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:14px">${(j.ingredientsDetected || []).map(i => `<span class="card-tag" style="background:${i.confidence === 'high' ? '#dcfce7' : i.confidence === 'medium' ? '#fef3c7' : '#fee2e2'};color:${i.confidence === 'high' ? '#166534' : i.confidence === 'medium' ? '#92400e' : '#991b1b'};border-color:transparent">${escapeHtml(i.name)}${i.qtyEstimate ? ` <span style="opacity:0.7">(${escapeHtml(i.qtyEstimate)})</span>` : ""}</span>`).join("")}</div>
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--accent);margin-bottom:8px">Try cooking</div>
+          <div style="display:grid;gap:8px">${(j.suggestions || []).map((s, i) => `
+            <div style="background:var(--bg-2);border-radius:10px;padding:12px;display:flex;justify-content:space-between;align-items:center;gap:10px">
+              <div style="flex:1;min-width:0">
+                <div style="font-weight:700;font-size:14px;margin-bottom:3px">${escapeHtml(s.title)}</div>
+                <div style="font-size:12px;color:var(--muted);line-height:1.45">${escapeHtml(s.rationale || "")}</div>
+                <div style="font-size:11px;color:var(--muted);margin-top:4px">⏱ ${s.estimatedMinutes || "?"} min · ${escapeHtml(s.difficulty || "")}${s.missingMustBuy?.length ? ` · need: ${s.missingMustBuy.join(", ")}` : ""}</div>
+              </div>
+              <button class="btn btn-primary" data-fridge-make="${i}" style="flex-shrink:0">Cook it</button>
+            </div>`).join("")}</div>
+        </div>
+      `;
+      host.querySelectorAll("[data-fridge-make]").forEach(b => b.addEventListener("click", () => {
+        const sug = j.suggestions[Number(b.dataset.fridgeMake)];
+        document.getElementById("fridge-photo").value = "";
+        composeMode = "ai";
+        renderLibrary(document.getElementById("main"));
+        setTimeout(() => {
+          const p = document.getElementById("prompt");
+          if (p) { p.value = `${sug.title} — uses: ${(sug.usesIngredients || []).join(", ")}`; runGenerate(); }
+        }, 100);
+      }));
+    } catch (ex) {
+      progress.fail();
+      showToast(ex.message || "Failed", 5000, "error");
+    }
+  };
+  reader.readAsDataURL(file);
 }
 
 async function runGenerate() {
@@ -391,21 +696,54 @@ function renderRecipe(el) {
             ${(r.ingredients || []).map(i => `<li><span class="ing-qty">${escapeHtml(i.qty || "")}${i.unit ? " " + escapeHtml(i.unit) : ""}</span>${escapeHtml(i.name || "")}${i.notes ? `<span class="ing-notes">— ${escapeHtml(i.notes)}</span>` : ""}</li>`).join("")}
           </ul>
           ${(r.equipment || []).length ? `<div class="section-title" style="margin-top:18px">Equipment</div><ul class="equipment" style="list-style:none;padding:0;margin:0">${r.equipment.map(e => `<li>${escapeHtml(e)}</li>`).join("")}</ul>` : ""}
-          ${r.nutritionPerServing ? `<div class="section-title" style="margin-top:18px">Per serving</div><div style="font-size:13px;display:grid;gap:4px"><span>${r.nutritionPerServing.calories || "?"} cal</span><span>${r.nutritionPerServing.proteinG || "?"}g protein</span><span>${r.nutritionPerServing.carbsG || "?"}g carbs</span><span>${r.nutritionPerServing.fatG || "?"}g fat</span></div>` : ""}
+          ${(r.allergens || []).length ? `<div class="section-title" style="margin-top:18px">⚠️ Allergens</div><div style="display:flex;flex-wrap:wrap;gap:4px">${r.allergens.map(a => `<span class="card-tag" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5">${escapeHtml(a)}</span>`).join("")}</div>` : ""}
+          ${(r.skillsRequired || []).length ? `<div class="section-title" style="margin-top:18px">Skills you'll use</div><div style="font-size:12px;line-height:1.6">${r.skillsRequired.map(s => `<div>· ${escapeHtml(s)}</div>`).join("")}</div>` : ""}
+          ${r.nutritionPerServing ? `<div class="section-title" style="margin-top:18px">Per serving</div><div style="font-size:13px;display:grid;gap:3px">
+            <span><strong>${r.nutritionPerServing.calories || "?"}</strong> cal</span>
+            <span><strong>${r.nutritionPerServing.proteinG || "?"}</strong>g protein</span>
+            <span><strong>${r.nutritionPerServing.carbsG || "?"}</strong>g carbs${r.nutritionPerServing.fiberG ? ` (${r.nutritionPerServing.fiberG}g fiber)` : ""}</span>
+            <span><strong>${r.nutritionPerServing.fatG || "?"}</strong>g fat</span>
+            ${r.nutritionPerServing.sodiumMg ? `<span><strong>${r.nutritionPerServing.sodiumMg}</strong>mg sodium</span>` : ""}
+          </div>` : ""}
         </div>
         <div>
+          ${r.whyItWorks ? `<div style="background:linear-gradient(135deg,#fef3c7,#fde68a);border-radius:12px;padding:14px 16px;margin-bottom:16px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#92400e;margin-bottom:4px">Why it works</div><div style="font-size:13px;color:#451a03;line-height:1.5">${escapeHtml(r.whyItWorks)}</div></div>` : ""}
           <div class="section-title">Steps</div>
           <ol class="steps">${(r.steps || []).map(s => `<li>${escapeHtml(s)}</li>`).join("")}</ol>
-          ${(r.tips || []).length ? `<div class="section-title" style="margin-top:18px">Tips</div><ul class="tips" style="list-style:none;padding:0;margin:0">${r.tips.map(t => `<li>💡 ${escapeHtml(t)}</li>`).join("")}</ul>` : ""}
+          ${r.doneness ? `<div style="background:var(--bg-2);border-left:3px solid var(--primary);padding:10px 14px;margin-top:18px;border-radius:0 8px 8px 0"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--accent);margin-bottom:4px">How to tell it's done</div><div style="font-size:13px;line-height:1.5">${escapeHtml(r.doneness)}</div></div>` : ""}
+          ${(r.commonMistakes || []).length ? `<div class="section-title" style="margin-top:18px">⚠️ Common mistakes to avoid</div><ul class="tips" style="list-style:none;padding:0;margin:0">${r.commonMistakes.map(m => `<li style="color:#991b1b">⚠ ${escapeHtml(m)}</li>`).join("")}</ul>` : ""}
+          ${(r.tips || []).length ? `<div class="section-title" style="margin-top:18px">Pro tips</div><ul class="tips" style="list-style:none;padding:0;margin:0">${r.tips.map(t => `<li>💡 ${escapeHtml(t)}</li>`).join("")}</ul>` : ""}
+          ${(r.substitutions || []).length ? `<div class="section-title" style="margin-top:18px">Substitutions that work</div><ul class="tips" style="list-style:none;padding:0;margin:0">${r.substitutions.map(s => `<li>↔ <strong>${escapeHtml(s.for)}</strong> → ${escapeHtml(s.use)}${s.note ? ` <span style="color:var(--muted);font-size:12px">(${escapeHtml(s.note)})</span>` : ""}</li>`).join("")}</ul>` : ""}
+          ${r.pairings && (r.pairings.side || r.pairings.drink || r.pairings.dessert) ? `<div class="section-title" style="margin-top:18px">Serve it with</div><div style="font-size:13px;display:grid;gap:4px">${r.pairings.side ? `<div>🍽 <strong>Side:</strong> ${escapeHtml(r.pairings.side)}</div>` : ""}${r.pairings.drink ? `<div>🥂 <strong>Drink:</strong> ${escapeHtml(r.pairings.drink)}</div>` : ""}${r.pairings.dessert ? `<div>🍰 <strong>Dessert:</strong> ${escapeHtml(r.pairings.dessert)}</div>` : ""}</div>` : ""}
+          ${r.storage ? `<div class="section-title" style="margin-top:18px">Storage</div><div style="font-size:13px;display:grid;gap:4px">${r.storage.fridgeDays ? `<div>🧊 <strong>Fridge:</strong> ${r.storage.fridgeDays} days</div>` : ""}${r.storage.freezerMonths ? `<div>❄️ <strong>Freezer:</strong> ${r.storage.freezerMonths} months</div>` : ""}${r.storage.reheatMethod ? `<div>🔥 <strong>Reheat:</strong> ${escapeHtml(r.storage.reheatMethod)}</div>` : ""}</div>` : ""}
+          ${r.scalingNotes ? `<div style="background:#fef3c7;border-radius:8px;padding:10px 14px;margin-top:18px;font-size:12px"><strong>📏 If you scale this:</strong> ${escapeHtml(r.scalingNotes)}</div>` : ""}
           ${r.sourceUrl ? `<div style="margin-top:18px;font-size:12px;color:var(--muted)">Imported from <a href="${escapeHtml(r.sourceUrl)}" target="_blank" rel="noopener">${escapeHtml(r.sourceUrl)}</a></div>` : ""}
         </div>
       </div>
       <div class="recipe-actions">
+        <button class="btn btn-primary" id="cook-mode-btn">👨‍🍳 Cooking mode</button>
+        <button class="btn btn-secondary" id="shop-add-btn">${shoppingCart.includes(r.id) ? "✓ In shopping list" : "🛒 Add to list"}</button>
+        <button class="btn btn-secondary" id="cooked-btn">✓ I cooked this${r.timesMade ? ` (${r.timesMade})` : ""}</button>
         <button class="btn btn-secondary" id="edit-btn">✎ Edit</button>
         <button class="btn btn-secondary" id="print-btn">🖨 Print</button>
         <button class="btn btn-secondary" id="share-btn">🔗 Share</button>
+        <div style="display:flex;align-items:center;gap:6px;margin-left:8px;background:var(--bg-2);padding:4px 10px;border-radius:8px">
+          <span style="font-size:11px;color:var(--muted);font-weight:600">Scale</span>
+          <button class="btn-ghost" id="scale-dn" style="padding:2px 6px">−</button>
+          <span id="scale-val" style="font-weight:700;min-width:30px;text-align:center">1×</span>
+          <button class="btn-ghost" id="scale-up" style="padding:2px 6px">+</button>
+        </div>
         <div style="flex:1"></div>
         <button class="btn-ghost" id="del-btn" style="color:#dc2626">Delete</button>
+      </div>
+      <div style="padding:12px 32px;border-top:1px solid var(--border);background:var(--bg-2);display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <span style="font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:0.5px">Generate variation:</span>
+        <button class="btn btn-secondary" data-vary="vegan" style="padding:6px 12px;font-size:12px">Vegan version</button>
+        <button class="btn btn-secondary" data-vary="spicier" style="padding:6px 12px;font-size:12px">Spicier</button>
+        <button class="btn btn-secondary" data-vary="quick" style="padding:6px 12px;font-size:12px">30-min version</button>
+        <button class="btn btn-secondary" data-vary="gluten-free" style="padding:6px 12px;font-size:12px">Gluten-free</button>
+        <button class="btn btn-secondary" data-vary="kids" style="padding:6px 12px;font-size:12px">Kid-friendly</button>
+        <button class="btn btn-secondary" data-vary="healthy" style="padding:6px 12px;font-size:12px">Healthier</button>
       </div>
       <div class="refine-shell">
         <div class="section-title">↻ Ask AI to change something</div>
@@ -424,6 +762,69 @@ function renderRecipe(el) {
   document.getElementById("back").addEventListener("click", () => { view = "library"; render(); });
   document.getElementById("edit-btn").addEventListener("click", () => { view = "edit"; render(); });
   document.getElementById("print-btn").addEventListener("click", () => window.print());
+  document.getElementById("cook-mode-btn").addEventListener("click", () => openCookingMode(currentRecipe));
+  document.getElementById("shop-add-btn").addEventListener("click", () => {
+    if (shoppingCart.includes(r.id)) { shoppingCart = shoppingCart.filter(x => x !== r.id); showToast("Removed from shopping list", 2000, "info"); }
+    else { shoppingCart.push(r.id); showToast("Added to shopping list", 2000, "success"); }
+    localStorage.setItem("knoxcook:cart", JSON.stringify(shoppingCart));
+    render();
+  });
+  document.getElementById("cooked-btn").addEventListener("click", async () => {
+    try {
+      const res = await fetch(`${API}/api/social`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "recipe-cook", id: r.id }) });
+      const j = await res.json();
+      if (j.ok) { showToast(`Logged! You've cooked this ${j.timesMade} time${j.timesMade === 1 ? "" : "s"}.`, 3000, "success"); currentRecipe.timesMade = j.timesMade; render(); }
+    } catch { showToast("Couldn't log it", 3000, "error"); }
+  });
+  // Scaling slider — live, no AI
+  let scaleFactor = 1;
+  function applyScale(f) {
+    scaleFactor = Math.max(0.25, Math.min(8, f));
+    document.getElementById("scale-val").textContent = scaleFactor + "×";
+    // Re-render ingredient quantities scaled
+    document.querySelectorAll(".ing-qty").forEach((qtyEl, i) => {
+      const orig = currentRecipe.ingredients[i];
+      if (!orig) return;
+      const num = parseFloat(String(orig.qty || "").replace(",", "."));
+      if (isFinite(num)) {
+        const scaled = num * scaleFactor;
+        const rounded = scaled < 1 ? scaled.toFixed(2).replace(/\.?0+$/, "") : scaled < 10 ? scaled.toFixed(1).replace(/\.0$/, "") : Math.round(scaled).toString();
+        qtyEl.textContent = `${rounded}${orig.unit ? " " + orig.unit : ""}`;
+      }
+    });
+    // Show scaling warnings if non-1x
+    let warnHost = document.getElementById("scale-warn");
+    if (scaleFactor !== 1) {
+      if (!warnHost) {
+        warnHost = document.createElement("div");
+        warnHost.id = "scale-warn";
+        warnHost.style.cssText = "padding:8px 14px;margin:8px 0;background:#fef3c7;border-radius:8px;font-size:11px;color:#92400e";
+        document.querySelector(".recipe-actions").after(warnHost);
+      }
+      warnHost.innerHTML = `📏 Scaled ${scaleFactor}× — don't blindly scale salt, baking soda, yeast, or spices linearly. Cook time changes too. ${currentRecipe.scalingNotes ? `<br><strong>Author note:</strong> ${escapeHtml(currentRecipe.scalingNotes)}` : ""}`;
+    } else if (warnHost) {
+      warnHost.remove();
+    }
+  }
+  document.getElementById("scale-dn").addEventListener("click", () => applyScale(scaleFactor <= 1 ? scaleFactor / 2 : scaleFactor - 1));
+  document.getElementById("scale-up").addEventListener("click", () => applyScale(scaleFactor < 1 ? scaleFactor * 2 : scaleFactor + 1));
+  // Variation generators
+  document.querySelectorAll("[data-vary]").forEach(b => b.addEventListener("click", async () => {
+    const vary = b.dataset.vary;
+    const wishMap = { vegan: "Make this fully vegan", spicier: "Make it noticeably spicier", quick: "Cut total time to 30 minutes or less", "gluten-free": "Make it gluten-free", kids: "Adapt for kid-friendly taste (mild, less spice, familiar flavors)", healthy: "Make a noticeably healthier version (lower fat or sugar, more veg, lighter)" };
+    const wish = wishMap[vary] || vary;
+    b.disabled = true; const orig = b.textContent; b.innerHTML = `<span class="spinner"></span>`;
+    try {
+      const refined = await refineRecipe(currentRecipe, wish);
+      refined.title = (refined.title || currentRecipe.title) + " — " + vary.charAt(0).toUpperCase() + vary.slice(1);
+      const saved = await saveRecipe(refined);
+      showToast(`Variation saved as new recipe`, 2500, "success");
+      openRecipe(saved.id);
+    } catch (e) {
+      showToast(e.message || "Failed", 4000, "error");
+      b.disabled = false; b.textContent = orig;
+    }
+  }));
   document.getElementById("share-btn").addEventListener("click", async () => {
     const url = location.href.split("?")[0] + "?r=" + encodeURIComponent(r.id);
     try { await navigator.clipboard.writeText(url); showToast("Link copied to clipboard", 2500, "success"); }
@@ -552,6 +953,55 @@ document.getElementById("search").addEventListener("input", (e) => {
   window._st = setTimeout(() => { if (view === "library") render(); }, 250);
 });
 document.getElementById("brand").addEventListener("click", () => { view = "library"; searchQuery = ""; document.getElementById("search").value = ""; render(); });
+
+// Cmd+K command palette — global, opens an overlay with quick actions
+document.addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openPalette(); }
+});
+function openPalette() {
+  if (document.getElementById("cmd-palette")) return;
+  const recs = JSON.parse(localStorage.getItem("knoxcook:cache-last") || "[]");
+  const overlay = document.createElement("div");
+  overlay.id = "cmd-palette";
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.5);backdrop-filter:blur(6px);z-index:9999;display:flex;justify-content:center;align-items:flex-start;padding-top:80px";
+  overlay.innerHTML = `<div style="background:white;border-radius:14px;width:100%;max-width:520px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,0.3)">
+    <input id="cmd-input" type="text" autofocus placeholder="Type to search recipes, actions, or jump to apps…" style="width:100%;padding:18px 22px;font-size:15px;border:none;outline:none;font-family:inherit;border-bottom:1px solid var(--border)" />
+    <div id="cmd-results" style="max-height:400px;overflow-y:auto"></div>
+  </div>`;
+  document.body.appendChild(overlay);
+  const actions = [
+    { label: "🍳 Generate new recipe", action: () => { view = "library"; composeMode = "ai"; render(); } },
+    { label: "📷 Cook from my fridge", action: () => { view = "library"; composeMode = "fridge"; render(); } },
+    { label: "🎲 Random recipe", action: openRandomRecipe },
+    { label: "🛒 Open shopping list", action: () => { view = "shopping"; render(); } },
+    { label: "🌐 Open Knox Apps Hub", action: () => window.location.href = "https://knox-apps-hub.vercel.app" },
+    { label: "🛠 Open Forge (3D)", action: () => window.location.href = "https://knox-forge-knox-grover-s-projects.vercel.app" },
+    { label: "✨ Open Sites", action: () => window.location.href = "https://knox-sites.vercel.app" },
+    { label: "💪 Open Nexus (fitness)", action: () => window.location.href = "https://life-nexus-organizer.vercel.app" },
+  ];
+  function render(q = "") {
+    const filteredActions = actions.filter(a => !q || a.label.toLowerCase().includes(q.toLowerCase()));
+    const filteredRecs = q ? recs.filter((r) => (r.title + r.description).toLowerCase().includes(q.toLowerCase())).slice(0, 5) : [];
+    const html = [
+      ...filteredActions.map((a, i) => `<button class="cmd-row" data-act="${i}" style="display:block;width:100%;text-align:left;padding:12px 22px;background:none;border:none;font-family:inherit;font-size:14px;cursor:pointer;color:#1f1109">${a.label}</button>`),
+      ...filteredRecs.map(r => `<button class="cmd-row" data-rec="${escapeHtml(r.id)}" style="display:block;width:100%;text-align:left;padding:10px 22px;background:#fffaf2;border:none;font-family:inherit;font-size:13px;cursor:pointer;color:#1f1109">🍴 ${escapeHtml(r.title)}</button>`),
+    ].join("");
+    document.getElementById("cmd-results").innerHTML = html || `<div style="padding:18px;color:var(--muted);text-align:center;font-size:13px">No matches</div>`;
+    document.querySelectorAll(".cmd-row").forEach(b => b.addEventListener("click", () => {
+      if (b.dataset.act !== undefined) { close(); filteredActions[Number(b.dataset.act)].action(); }
+      else if (b.dataset.rec) { close(); openRecipe(b.dataset.rec); }
+    }));
+  }
+  function close() { overlay.remove(); document.removeEventListener("keydown", esc); }
+  function esc(e) { if (e.key === "Escape") close(); }
+  document.addEventListener("keydown", esc);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+  document.getElementById("cmd-input").addEventListener("input", e => render(e.target.value));
+  render();
+}
+// Cache last-loaded recipes for palette search
+const _origList = listRecipes;
+window.listRecipes = async function(q) { const r = await _origList(q); try { localStorage.setItem("knoxcook:cache-last", JSON.stringify(r.slice(0, 50))); } catch {} return r; };
 
 // deep link ?r=recipe-id
 const params = new URLSearchParams(location.search);
