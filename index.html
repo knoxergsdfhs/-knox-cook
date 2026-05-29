@@ -114,6 +114,65 @@
   .gen-progress-fill { height: 100%; background: linear-gradient(90deg, var(--primary), var(--primary-2)); width: 5%; transition: width 0.6s ease; border-radius: 999px; }
   .gen-progress-msg { font-size: 12px; color: var(--muted); margin-top: 5px; text-align: center; }
   .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); padding: 12px 18px; border-radius: 12px; font-size: 13px; z-index: 9999; box-shadow: 0 10px 30px rgba(0,0,0,0.18); max-width: 520px; text-align: center; display: none; border: 1px solid; }
+  /* Favorites & ratings */
+  .fave-btn { position:absolute; top:8px; right:8px; background:rgba(255,255,255,0.88); border:none; border-radius:50%; width:32px; height:32px; display:grid; place-items:center; cursor:pointer; font-size:16px; transition:transform 0.18s; z-index:2; }
+  .fave-btn:hover { transform:scale(1.25); }
+  .stars { display:flex; gap:2px; margin-top:6px; }
+  .star { font-size:16px; cursor:pointer; transition:transform 0.1s; line-height:1; }
+  .star:hover { transform:scale(1.25); }
+  .diff-badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; }
+  .diff-easy { background:#dcfce7; color:#166534; }
+  .diff-medium { background:#fef3c7; color:#92400e; }
+  .diff-hard { background:#fee2e2; color:#991b1b; }
+  .filter-tabs { display:flex; gap:4px; margin-bottom:14px; flex-wrap:wrap; }
+  .filter-tab { padding:6px 14px; border-radius:999px; border:1px solid var(--border); background:white; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; color:var(--muted); transition:all 0.12s; }
+  .filter-tab.active { background:var(--primary); color:white; border-color:var(--primary); }
+  .filter-tab:hover:not(.active) { border-color:var(--primary); color:var(--text); }
+  .card-cover { position:relative; }
+  .recipe-count-badge { background:var(--bg); border:1px solid var(--border); border-radius:999px; padding:4px 12px; font-size:12px; font-weight:600; color:var(--muted); }
+  /* Ingredient checkboxes */
+  .ing-label { display:flex; align-items:flex-start; gap:8px; padding:6px 0; border-bottom:1px solid var(--border-soft); cursor:pointer; font-size:14px; }
+  .ing-label input[type=checkbox] { margin-top:2px; width:16px; height:16px; accent-color:var(--primary); flex-shrink:0; }
+  .ing-label.checked .ing-name { text-decoration:line-through; color:var(--muted-2); }
+  .ing-progress { font-size:11px; color:var(--muted); font-weight:600; margin-bottom:8px; }
+  /* Note field */
+  .recipe-note-area { width:100%; padding:10px 12px; border:1px dashed var(--border); border-radius:8px; background:var(--bg); font-family:inherit; font-size:13px; resize:vertical; color:var(--text); min-height:64px; }
+  .recipe-note-area:focus { outline:none; border-color:var(--accent); border-style:solid; }
+  /* Dark mode */
+  .dark-mode-btn { background:transparent; border:1px solid var(--border); border-radius:8px; padding:5px 9px; cursor:pointer; font-size:15px; line-height:1; }
+  [data-theme="dark"] { --bg:#0f0a06; --bg-2:#1a1208; --card:#1f1510; --text:#faf5ef; --muted:#a8a29e; --muted-2:#78716c; --border:#3a2a1a; --border-soft:#2a1f14; }
+  [data-theme="dark"] .top, [data-theme="dark"] .card, [data-theme="dark"] .compose, [data-theme="dark"] .recipe-page, [data-theme="dark"] .btn-secondary, [data-theme="dark"] .search-input { background:var(--card) !important; border-color:var(--border); color:var(--text); }
+  [data-theme="dark"] body { background:var(--bg); }
+  /* Back to top */
+  .back-to-top { position:fixed; bottom:76px; right:20px; width:40px; height:40px; border-radius:50%; background:var(--primary); color:white; border:none; cursor:pointer; font-size:18px; display:none; place-items:center; box-shadow:0 4px 12px rgba(220,38,38,0.32); z-index:100; }
+  .back-to-top.visible { display:grid; }
+  /* Print */
+  @media print {
+    .top, .compose, .recipe-actions, .refine-shell, .back-to-top, #toast, [data-vary], .filter-tabs, .might-like, .recipe-note-section { display:none !important; }
+    body, .main { padding:0 !important; max-width:100% !important; }
+    .recipe-page { border:none !important; box-shadow:none !important; border-radius:0 !important; }
+    .recipe-hero { background:#fff !important; padding:20px 0 !important; }
+    ol.steps li { background:#fff !important; border:1px solid #eee; }
+    ol.steps li::before { background:#333 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .card-cover { display:none !important; }
+  }
+  /* Search highlight */
+  mark { background:#fef08a; padding:0 2px; border-radius:2px; font-style:normal; }
+  /* Might also like */
+  .might-like { padding:18px 32px; border-top:1px solid var(--border); }
+  .might-like-grid { display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; }
+  .might-like-card { background:var(--bg-2); border:1px solid var(--border); border-radius:10px; padding:10px 14px; cursor:pointer; flex:1; min-width:160px; max-width:220px; transition:all 0.12s; }
+  .might-like-card:hover { border-color:var(--primary); transform:translateY(-1px); }
+  .might-like-card .mlt { font-weight:700; font-size:13px; margin-bottom:2px; }
+  .might-like-card .mlm { font-size:11px; color:var(--muted); }
+  /* Cuisine chips */
+  .cuisine-chips { display:flex; flex-wrap:wrap; gap:4px; margin-top:8px; }
+  .cuisine-chip { background:var(--bg); border:1px solid var(--border); border-radius:999px; padding:4px 10px; font-size:11px; color:var(--muted); cursor:pointer; font-family:inherit; transition:all 0.1s; }
+  .cuisine-chip.selected { background:var(--primary); color:white; border-color:var(--primary); }
+  /* Nutrition bars */
+  .nut-bar-wrap { margin-top:4px; }
+  .nut-bar { height:6px; border-radius:999px; background:var(--border); overflow:hidden; margin-top:3px; }
+  .nut-bar-fill { height:100%; border-radius:999px; transition:width 0.6s ease; }
 </style>
 </head>
 <body>
@@ -132,6 +191,7 @@
     </div>
     <input type="text" class="search-input" id="search" placeholder="Search recipes..." />
     <div class="top-btns">
+      <button class="dark-mode-btn" id="dark-btn" title="Toggle dark mode">🌙</button>
       <button class="btn btn-secondary" id="account-btn">Sign in</button>
     </div>
   </div>
@@ -263,7 +323,7 @@ function showToast(msg, ms = 3000, variant = "info") {
   clearTimeout(showToast._t); showToast._t = setTimeout(() => host.style.display = "none", ms);
 }
 function startProgress(host, kind) {
-  const messages = kind === "refine" ? ["Reading your change…", "AI is updating…", "Polishing…"] : kind === "import" ? ["Fetching the page…", "Extracting recipe…", "Cleaning up…"] : ["Reading your idea…", "AI is cooking up the recipe…", "Picking quantities…", "Writing steps…", "Adding tips…"];
+  const messages = kind === "refine" ? ["Reading your request…", "AI is adapting the recipe…", "Polishing the result…", "Almost done…"] : kind === "import" ? ["Fetching the page…", "Reading the recipe…", "Extracting ingredients…", "Writing it up…"] : ["Preheating the AI…", "Brainstorming ingredients…", "Building your recipe…", "Writing step-by-step instructions…", "Adding pro tips…", "Plating it nicely…"];
   host.innerHTML = `<div class="gen-progress"><div class="gen-progress-bar"><div class="gen-progress-fill" id="gpf"></div></div><div class="gen-progress-msg" id="gpm">${messages[0]}</div></div>`;
   let i = 0;
   const fill = host.querySelector("#gpf"), msg = host.querySelector("#gpm");
@@ -276,17 +336,57 @@ let view = "library";  // library | recipe | edit | shopping | auth
 let currentRecipe = null;
 let composeMode = "ai";   // ai | url | fridge
 let searchQuery = "";
-let librarySort = "newest"; // newest | most-made | most-viewed
-let shoppingCart = JSON.parse(localStorage.getItem("knoxcook:cart") || "[]"); // array of recipe ids
-const EXAMPLES = ["Tonkotsu ramen with chashu", "30-minute weeknight tacos al pastor", "Pumpkin spice latte from scratch", "Sourdough discard pancakes", "Vegan chocolate chip cookies", "Thai basil chicken (pad krapow)", "Crispy oven-fried buffalo cauliflower", "Classic French onion soup"];
+let librarySort = "newest"; // newest | most-made | most-viewed | fastest
+let libraryFilter = "all"; // all | faves | mine | quick
+let shoppingCart = JSON.parse(localStorage.getItem("knoxcook:cart") || "[]");
+let selectedCuisine = "";
+const EXAMPLES = ["Tonkotsu ramen with chashu", "30-minute weeknight tacos al pastor", "Pumpkin spice latte from scratch", "Sourdough discard pancakes", "Vegan chocolate chip cookies", "Thai basil chicken (pad krapow)", "Crispy oven-fried buffalo cauliflower", "Classic French onion soup", "Butter chicken from scratch", "Korean bibimbap bowl", "Homemade sushi rice + rolls", "Shakshuka with feta"];
+const CUISINES = ["🇮🇹 Italian","🇯🇵 Japanese","🇲🇽 Mexican","🇮🇳 Indian","🇨🇳 Chinese","🇰🇷 Korean","🇹🇭 Thai","🇫🇷 French","🇲🇦 Mediterranean","🥗 Vegan","🏃 High-protein","⚡ Under 30 min"];
+
+// ---- Favorites & ratings & notes helpers -------------------------
+function getFaves() { try { return JSON.parse(localStorage.getItem("knoxcook:faves") || "[]"); } catch { return []; } }
+function toggleFave(id) {
+  let f = getFaves();
+  if (f.includes(id)) f = f.filter(x => x !== id);
+  else f.unshift(id);
+  localStorage.setItem("knoxcook:faves", JSON.stringify(f)); return f.includes(id);
+}
+function getRatings() { try { return JSON.parse(localStorage.getItem("knoxcook:ratings") || "{}"); } catch { return {}; } }
+function setRating(id, stars) { const r = getRatings(); r[id] = stars; localStorage.setItem("knoxcook:ratings", JSON.stringify(r)); }
+function getMyRating(id) { return getRatings()[id] || 0; }
+function getNote(id) { try { return localStorage.getItem(`knoxcook:note:${id}`) || ""; } catch { return ""; } }
+function setNote(id, text) { localStorage.setItem(`knoxcook:note:${id}`, text); }
+
+// ---- Card thumbnail gradient from ID hash ------------------------
+function idColor(id) {
+  let h = 0; for (let i = 0; i < (id||"").length; i++) h = (h * 31 + (id||"").charCodeAt(i)) & 0xffffffff;
+  const g = ["linear-gradient(135deg,#fde68a,#fca5a5)","linear-gradient(135deg,#a7f3d0,#6ee7b7)","linear-gradient(135deg,#bfdbfe,#a5f3fc)","linear-gradient(135deg,#ddd6fe,#f0abfc)","linear-gradient(135deg,#fed7aa,#fde68a)","linear-gradient(135deg,#fecaca,#fde68a)","linear-gradient(135deg,#c7d2fe,#a7f3d0)","linear-gradient(135deg,#fbcfe8,#fde68a)"];
+  return g[Math.abs(h) % g.length];
+}
+
+// ---- Difficulty badge from ingredient count ----------------------
+function diffBadge(recipe) {
+  const d = recipe.difficulty || (recipe.ingredients?.length > 12 ? "Hard" : recipe.ingredients?.length > 6 ? "Medium" : "Easy");
+  const cls = d.toLowerCase().includes("easy") ? "diff-easy" : d.toLowerCase().includes("hard") ? "diff-hard" : "diff-medium";
+  return `<span class="diff-badge ${cls}">${escapeHtml(d)}</span>`;
+}
+
+// ---- Highlight search term in text -------------------------------
+function highlight(text, q) {
+  if (!q) return escapeHtml(text);
+  const safe = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return escapeHtml(text).replace(new RegExp(`(${safe})`, "gi"), "<mark>$1</mark>");
+}
 
 function render() {
   const el = document.getElementById("main");
   const accBtn = document.getElementById("account-btn");
   const s = getSession();
-  accBtn.textContent = s ? s.name : "Sign in";
+  if (s) {
+    const faveCount = getFaves().length;
+    accBtn.textContent = `${s.name}${faveCount ? " ❤️" + faveCount : ""}`;
+  } else { accBtn.textContent = "Sign in"; }
   accBtn.onclick = () => s ? (clearSession(), showToast("Signed out", 2000), render()) : (view = "auth", render());
-
   if (view === "auth") return renderAuth(el);
   if (view === "recipe") return renderRecipe(el);
   if (view === "edit") return renderEdit(el);
@@ -377,78 +477,136 @@ async function renderShopping(el) {
 }
 
 function renderLibrary(el) {
+  const faves = getFaves();
+  const ratings = getRatings();
+  const session = getSession();
   el.innerHTML = `
-    <div class="page-title">All recipes</div>
-    <div class="page-sub">Public library — anyone can browse, anyone can add. Type a request, AI generates + saves it for everyone.</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px">
+      <div class="page-title" style="margin-bottom:0">All recipes</div>
+      <div id="recipe-count-badge" class="recipe-count-badge" style="visibility:hidden">— recipes</div>
+    </div>
+    <div class="page-sub">Public library — anyone can browse, anyone can add. AI generates + saves for everyone.</div>
+    <div class="filter-tabs">
+      <button class="filter-tab ${libraryFilter === 'all' ? 'active' : ''}" data-filt="all">🍴 All</button>
+      <button class="filter-tab ${libraryFilter === 'faves' ? 'active' : ''}" data-filt="faves">❤️ Favorites${faves.length > 0 ? ` (${faves.length})` : ""}</button>
+      ${session ? `<button class="filter-tab ${libraryFilter === 'mine' ? 'active' : ''}" data-filt="mine">👤 Mine</button>` : ""}
+      <button class="filter-tab ${libraryFilter === 'quick' ? 'active' : ''}" data-filt="quick">⚡ Under 30 min</button>
+    </div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
       <span style="font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:0.5px">Sort:</span>
       <button class="ex-chip ${librarySort === 'newest' ? 'active' : ''}" data-sort="newest">Newest</button>
       <button class="ex-chip ${librarySort === 'most-made' ? 'active' : ''}" data-sort="most-made">Most made</button>
       <button class="ex-chip ${librarySort === 'most-viewed' ? 'active' : ''}" data-sort="most-viewed">Trending</button>
+      <button class="ex-chip ${librarySort === 'fastest' ? 'active' : ''}" data-sort="fastest">⚡ Fastest first</button>
       <div style="flex:1"></div>
-      ${shoppingCart.length > 0 ? `<button class="btn btn-primary" id="shop-btn" style="padding:7px 14px;font-size:12px">🛒 Shopping list (${shoppingCart.length})</button>` : ""}
+      ${shoppingCart.length > 0 ? `<button class="btn btn-primary" id="shop-btn" style="padding:7px 14px;font-size:12px">🛒 List (${shoppingCart.length})</button>` : ""}
     </div>
     <div class="compose">
       <div class="compose-tabs">
         <button class="compose-tab ${composeMode === "ai" ? "active" : ""}" data-tab="ai">✨ AI generate</button>
         <button class="compose-tab ${composeMode === "url" ? "active" : ""}" data-tab="url">🔗 Import URL</button>
-        <button class="compose-tab ${composeMode === "fridge" ? "active" : ""}" data-tab="fridge">📷 Cook from my fridge</button>
+        <button class="compose-tab ${composeMode === "fridge" ? "active" : ""}" data-tab="fridge">📷 From fridge</button>
         <button class="compose-tab" id="random-btn" title="Random recipe">🎲 Random</button>
       </div>
       ${composeMode === "fridge" ? `
         <div style="display:flex;flex-direction:column;gap:8px">
-          <div style="font-size:13px;color:var(--muted)">Take a photo of your fridge / pantry / counter. AI identifies what you have + suggests recipes you can make right now.</div>
+          <div style="font-size:13px;color:var(--muted)">Take a photo of your fridge / pantry. AI identifies what you have + suggests recipes you can make right now.</div>
           <label class="btn btn-primary" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;align-self:flex-start">
-            📷 Take or upload photo
-            <input type="file" id="fridge-photo" accept="image/*" capture="environment" style="display:none" />
+            📷 Take or upload photo<input type="file" id="fridge-photo" accept="image/*" capture="environment" style="display:none" />
           </label>
           <input type="text" id="fridge-extras" placeholder="Optional: pantry staples you have (rice, pasta, canned tomatoes...)" />
-          <div id="compose-progress"></div>
-          <div id="fridge-result"></div>
+          <div id="compose-progress"></div><div id="fridge-result"></div>
         </div>
       ` : `
         <div class="compose-row">
           <input type="text" id="prompt" placeholder="${composeMode === "ai" ? "e.g. 'classic chocolate chip cookies' or 'one-pot creamy chicken pasta'" : "https://allrecipes.com/recipe/..."}" />
-          <button class="btn btn-primary" id="go-btn">${composeMode === "ai" ? "Generate" : "Import"}</button>
+          <button class="btn btn-primary" id="go-btn">${composeMode === "ai" ? "✨ Generate" : "⬇ Import"}</button>
         </div>
         <div id="compose-progress"></div>
-        ${composeMode === "ai" ? `<div class="examples">${EXAMPLES.map(e => `<button class="ex-chip" data-ex="${escapeHtml(e)}">${escapeHtml(e)}</button>`).join("")}</div>` : `<div class="examples" style="font-size:11px;color:var(--muted);margin-top:8px">Paste a URL from any recipe blog. AI extracts the title, ingredients, steps, and saves it to the public library.</div>`}
+        ${composeMode === "ai" ? `
+          <div class="cuisine-chips" id="cuisine-chips">
+            ${CUISINES.map(c => `<button class="cuisine-chip${selectedCuisine === c ? " selected" : ""}" data-cuisine="${escapeHtml(c)}">${escapeHtml(c)}</button>`).join("")}
+          </div>
+          <div class="examples" style="margin-top:6px">${EXAMPLES.map(e => `<button class="ex-chip" data-ex="${escapeHtml(e)}">${escapeHtml(e)}</button>`).join("")}</div>
+        ` : `<div class="examples" style="font-size:11px;color:var(--muted);margin-top:8px">Paste a URL from any recipe blog. AI extracts the title, ingredients, and steps.</div>`}
       `}
     </div>
     <div id="recipe-grid"></div>
   `;
   el.querySelectorAll(".compose-tab[data-tab]").forEach(b => b.addEventListener("click", () => { composeMode = b.dataset.tab; renderLibrary(el); }));
   el.querySelectorAll("[data-ex]").forEach(b => b.addEventListener("click", () => { document.getElementById("prompt").value = b.dataset.ex; document.getElementById("prompt").focus(); }));
+  el.querySelectorAll(".cuisine-chip").forEach(b => b.addEventListener("click", () => {
+    selectedCuisine = selectedCuisine === b.dataset.cuisine ? "" : b.dataset.cuisine;
+    const p = document.getElementById("prompt");
+    if (p && selectedCuisine) { if (!p.value.includes(selectedCuisine.replace(/^[^\s]+ /,""))) p.value = selectedCuisine.replace(/^[^\s]+ /,"") + (p.value ? " " + p.value : ""); }
+    renderLibrary(el);
+  }));
   document.getElementById("go-btn")?.addEventListener("click", composeMode === "ai" ? runGenerate : runImport);
   document.getElementById("prompt")?.addEventListener("keydown", e => { if (e.key === "Enter") (composeMode === "ai" ? runGenerate : runImport)(); });
   document.getElementById("random-btn")?.addEventListener("click", openRandomRecipe);
   document.getElementById("fridge-photo")?.addEventListener("change", runFridge);
   el.querySelectorAll("[data-sort]").forEach(b => b.addEventListener("click", () => { librarySort = b.dataset.sort; renderLibrary(el); }));
+  el.querySelectorAll("[data-filt]").forEach(b => b.addEventListener("click", () => { libraryFilter = b.dataset.filt; renderLibrary(el); }));
   document.getElementById("shop-btn")?.addEventListener("click", () => { view = "shopping"; render(); });
 
   const gridHost = document.getElementById("recipe-grid");
   gridHost.innerHTML = `<div class="empty"><div class="spinner"></div><br>Loading recipes…</div>`;
-  listRecipes(searchQuery).then(recs => {
+  listRecipes(searchQuery).then(allRecs => {
+    // Apply filter
+    let recs = allRecs;
+    if (libraryFilter === "faves") recs = recs.filter(r => faves.includes(r.id));
+    if (libraryFilter === "mine" && session) recs = recs.filter(r => r.author && (r.author.toLowerCase() === session.name?.toLowerCase() || r.author === session.email));
+    if (libraryFilter === "quick") recs = recs.filter(r => (r.totalMinutes || r.cookMinutes || 999) <= 30);
+    // Apply sort
+    if (librarySort === "most-made") recs = [...recs].sort((a, b) => (b.timesMade || 0) - (a.timesMade || 0));
+    if (librarySort === "fastest") recs = [...recs].sort((a, b) => (a.totalMinutes || a.cookMinutes || 999) - (b.totalMinutes || b.cookMinutes || 999));
+    // Update count badge
+    const badge = document.getElementById("recipe-count-badge");
+    if (badge) { badge.textContent = `${recs.length} recipe${recs.length === 1 ? "" : "s"}`; badge.style.visibility = "visible"; }
     if (recs.length === 0) {
-      gridHost.innerHTML = `<div class="empty"><div class="empty-icon">🍳</div><h2>${searchQuery ? `No results for "${escapeHtml(searchQuery)}"` : "No recipes yet"}</h2><p>${searchQuery ? "Try a different search or generate one." : "Be the first — type what you want and hit Generate."}</p></div>`;
+      const emptyMsg = libraryFilter === "faves" ? ["❤️", "No favorites yet", "Tap the heart on any recipe to save it here."]
+        : libraryFilter === "mine" ? ["👤", "No recipes yet", "Generate one and it'll appear here."]
+        : libraryFilter === "quick" ? ["⚡", "No quick recipes found", "Generate a '30-minute' recipe to see it here."]
+        : searchQuery ? ["🔍", `No results for "${escapeHtml(searchQuery)}"`, "Try different keywords or generate a new one."]
+        : ["🍳", "No recipes yet", "Be the first — type what you want and hit Generate."];
+      gridHost.innerHTML = `<div class="empty"><div class="empty-icon">${emptyMsg[0]}</div><h2>${emptyMsg[1]}</h2><p>${emptyMsg[2]}</p></div>`;
       return;
     }
-    gridHost.innerHTML = `<div class="grid">${recs.map(r => `
-      <div class="card" data-rid="${escapeHtml(r.id)}">
-        <div class="card-cover">${(r.title || "?").charAt(0)}</div>
+    gridHost.innerHTML = `<div class="grid">${recs.map(r => {
+      const isFave = faves.includes(r.id);
+      const myRating = ratings[r.id] || 0;
+      const stars = [1,2,3,4,5].map(i => i <= myRating ? "⭐" : "☆").join("");
+      return `
+      <div class="card" data-rid="${escapeHtml(r.id)}" style="position:relative">
+        <div class="card-cover" style="background:${idColor(r.id)}">
+          <span style="font-size:38px;font-weight:800;color:rgba(255,255,255,0.85);text-shadow:0 2px 8px rgba(0,0,0,0.15)">${(r.title || "?").charAt(0).toUpperCase()}</span>
+          <button class="fave-btn" data-fave-id="${escapeHtml(r.id)}" title="${isFave ? "Remove favorite" : "Add to favorites"}">${isFave ? "❤️" : "🤍"}</button>
+        </div>
         <div class="card-body">
-          <div class="card-title">${escapeHtml(r.title || "Untitled")}</div>
-          <div class="card-desc">${escapeHtml((r.description || "").slice(0, 110))}${(r.description || "").length > 110 ? "…" : ""}</div>
+          <div class="card-title">${highlight(r.title || "Untitled", searchQuery)}</div>
+          ${diffBadge(r)}
+          <div class="card-desc" style="margin-top:4px">${highlight((r.description || "").slice(0, 100), searchQuery)}${(r.description || "").length > 100 ? "…" : ""}</div>
           <div class="card-meta">
-            ${r.totalMinutes ? `<span>⏱ ${r.totalMinutes} min</span>` : ""}
+            ${r.totalMinutes ? `<span>⏱ ${r.totalMinutes} min</span>` : r.cookMinutes ? `<span>⏱ ${r.cookMinutes} min</span>` : ""}
             ${r.servings ? `<span>🍽 ${r.servings}</span>` : ""}
-            ${r.difficulty ? `<span>📊 ${escapeHtml(r.difficulty)}</span>` : ""}
             ${r.author ? `<span>· ${escapeHtml(r.author)}</span>` : ""}
           </div>
-          ${(r.tags || []).length > 0 ? `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px">${(r.tags || []).slice(0, 4).map(t => `<span class="card-tag">${escapeHtml(t)}</span>`).join("")}</div>` : ""}
+          ${myRating > 0 ? `<div style="font-size:13px;margin-top:4px">${stars}</div>` : ""}
+          ${(r.tags || []).length > 0 ? `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:3px">${(r.tags || []).slice(0, 3).map(t => `<span class="card-tag">${escapeHtml(t)}</span>`).join("")}</div>` : ""}
         </div>
-      </div>`).join("")}</div>`;
-    gridHost.querySelectorAll(".card[data-rid]").forEach(c => c.addEventListener("click", () => openRecipe(c.dataset.rid)));
+      </div>`;
+    }).join("")}</div>`;
+    gridHost.querySelectorAll(".card[data-rid]").forEach(c => c.addEventListener("click", e => {
+      if (e.target.closest(".fave-btn")) return;
+      openRecipe(c.dataset.rid);
+    }));
+    gridHost.querySelectorAll(".fave-btn").forEach(b => b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const isNow = toggleFave(b.dataset.faveId);
+      b.textContent = isNow ? "❤️" : "🤍";
+      showToast(isNow ? "Added to favorites" : "Removed from favorites", 2000, isNow ? "success" : "info");
+      render(); // refresh badge count
+    }));
   }).catch(e => { gridHost.innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><h2>Couldn't load</h2><p>${escapeHtml(e.message || "")}</p></div>`; });
 }
 
@@ -691,9 +849,15 @@ function renderRecipe(el) {
       </div>
       <div class="recipe-body">
         <div>
-          <div class="section-title">Ingredients</div>
-          <ul class="ingredients" style="list-style:none;padding:0;margin:0">
-            ${(r.ingredients || []).map(i => `<li><span class="ing-qty">${escapeHtml(i.qty || "")}${i.unit ? " " + escapeHtml(i.unit) : ""}</span>${escapeHtml(i.name || "")}${i.notes ? `<span class="ing-notes">— ${escapeHtml(i.notes)}</span>` : ""}</li>`).join("")}
+          <div class="section-title" style="display:flex;justify-content:space-between;align-items:center">
+            Ingredients
+            <span class="ing-progress" id="ing-progress">0 / ${(r.ingredients||[]).length} checked</span>
+          </div>
+          <ul class="ingredients" style="list-style:none;padding:0;margin:0" id="ing-list">
+            ${(r.ingredients || []).map((i, idx) => `<li><label class="ing-label" id="ing-${idx}">
+              <input type="checkbox" data-ing="${idx}" />
+              <span class="ing-name"><span class="ing-qty">${escapeHtml(i.qty || "")}${i.unit ? " " + escapeHtml(i.unit) : ""}</span>${escapeHtml(i.name || "")}${i.notes ? `<span class="ing-notes">— ${escapeHtml(i.notes)}</span>` : ""}</span>
+            </label></li>`).join("")}
           </ul>
           ${(r.equipment || []).length ? `<div class="section-title" style="margin-top:18px">Equipment</div><ul class="equipment" style="list-style:none;padding:0;margin:0">${r.equipment.map(e => `<li>${escapeHtml(e)}</li>`).join("")}</ul>` : ""}
           ${(r.allergens || []).length ? `<div class="section-title" style="margin-top:18px">⚠️ Allergens</div><div style="display:flex;flex-wrap:wrap;gap:4px">${r.allergens.map(a => `<span class="card-tag" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5">${escapeHtml(a)}</span>`).join("")}</div>` : ""}
@@ -721,12 +885,14 @@ function renderRecipe(el) {
         </div>
       </div>
       <div class="recipe-actions">
-        <button class="btn btn-primary" id="cook-mode-btn">👨‍🍳 Cooking mode</button>
-        <button class="btn btn-secondary" id="shop-add-btn">${shoppingCart.includes(r.id) ? "✓ In shopping list" : "🛒 Add to list"}</button>
-        <button class="btn btn-secondary" id="cooked-btn">✓ I cooked this${r.timesMade ? ` (${r.timesMade})` : ""}</button>
+        <button class="btn btn-primary" id="cook-mode-btn">👨‍🍳 Cook</button>
+        <button class="btn btn-secondary" id="shop-add-btn">${shoppingCart.includes(r.id) ? "✓ In list" : "🛒 Add to list"}</button>
+        <button class="btn btn-secondary" id="cooked-btn">✓ Cooked${r.timesMade ? ` (${r.timesMade})` : ""}</button>
         <button class="btn btn-secondary" id="edit-btn">✎ Edit</button>
         <button class="btn btn-secondary" id="print-btn">🖨 Print</button>
         <button class="btn btn-secondary" id="share-btn">🔗 Share</button>
+        <button class="btn btn-secondary" id="copy-text-btn">📋 Copy</button>
+        <button class="btn btn-secondary" id="read-aloud-btn">🔊 Read aloud</button>
         <div style="display:flex;align-items:center;gap:6px;margin-left:8px;background:var(--bg-2);padding:4px 10px;border-radius:8px">
           <span style="font-size:11px;color:var(--muted);font-weight:600">Scale</span>
           <button class="btn-ghost" id="scale-dn" style="padding:2px 6px">−</button>
@@ -744,6 +910,26 @@ function renderRecipe(el) {
         <button class="btn btn-secondary" data-vary="gluten-free" style="padding:6px 12px;font-size:12px">Gluten-free</button>
         <button class="btn btn-secondary" data-vary="kids" style="padding:6px 12px;font-size:12px">Kid-friendly</button>
         <button class="btn btn-secondary" data-vary="healthy" style="padding:6px 12px;font-size:12px">Healthier</button>
+      </div>
+      <div style="padding:14px 32px;border-top:1px solid var(--border);background:var(--bg-2);display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <span style="font-size:12px;color:var(--muted);font-weight:600">Your rating:</span>
+        <div class="stars" id="star-row">
+          ${[1,2,3,4,5].map(i => `<span class="star" data-star="${i}" title="${i} star${i>1?"s":""}">${i <= getMyRating(r.id) ? "⭐" : "☆"}</span>`).join("")}
+        </div>
+        <span style="font-size:11px;color:var(--muted)" id="star-label">${getMyRating(r.id) > 0 ? ["","★","★★","★★★","★★★★","★★★★★ Perfect!"][getMyRating(r.id)] : "Not rated"}</span>
+        <div style="flex:1"></div>
+        <button class="btn btn-secondary${getFaves().includes(r.id) ? "" : ""}" id="fave-recipe-btn" style="padding:6px 14px;font-size:12px">${getFaves().includes(r.id) ? "❤️ Favorited" : "🤍 Favorite"}</button>
+      </div>
+      <div class="recipe-note-section" style="padding:14px 32px;border-top:1px solid var(--border)">
+        <div class="section-title" style="margin-bottom:6px">📝 Personal notes</div>
+        <textarea class="recipe-note-area" id="recipe-note" placeholder="Add your own notes, tweaks, or reminders for next time…" rows="3">${escapeHtml(getNote(r.id))}</textarea>
+        <div style="display:flex;justify-content:flex-end;margin-top:4px">
+          <span id="note-saved" style="font-size:11px;color:var(--muted);opacity:0">✓ Saved</span>
+        </div>
+      </div>
+      <div class="might-like" id="might-like-section">
+        <div class="section-title">You might also like</div>
+        <div class="might-like-grid" id="might-like-grid"><div class="spinner"></div></div>
       </div>
       <div class="refine-shell">
         <div class="section-title">↻ Ask AI to change something</div>
@@ -763,6 +949,101 @@ function renderRecipe(el) {
   document.getElementById("edit-btn").addEventListener("click", () => { view = "edit"; render(); });
   document.getElementById("print-btn").addEventListener("click", () => window.print());
   document.getElementById("cook-mode-btn").addEventListener("click", () => openCookingMode(currentRecipe));
+
+  // Ingredient checkboxes
+  const ingChecked = {};
+  function updateIngProgress() {
+    const total = (r.ingredients||[]).length;
+    const done = Object.values(ingChecked).filter(Boolean).length;
+    const prog = document.getElementById("ing-progress");
+    if (prog) prog.textContent = `${done} / ${total} checked`;
+  }
+  document.querySelectorAll("#ing-list [data-ing]").forEach(cb => {
+    cb.addEventListener("change", () => {
+      ingChecked[cb.dataset.ing] = cb.checked;
+      const label = document.getElementById(`ing-${cb.dataset.ing}`);
+      if (label) label.classList.toggle("checked", cb.checked);
+      updateIngProgress();
+    });
+  });
+
+  // Star ratings
+  const starRow = document.getElementById("star-row");
+  const starLabel = document.getElementById("star-label");
+  if (starRow) {
+    starRow.querySelectorAll(".star").forEach(s => {
+      s.addEventListener("click", () => {
+        const n = Number(s.dataset.star);
+        setRating(r.id, n);
+        starRow.querySelectorAll(".star").forEach((st, i) => st.textContent = i < n ? "⭐" : "☆");
+        if (starLabel) starLabel.textContent = ["","★","★★","★★★","★★★★","★★★★★ Perfect!"][n];
+        showToast(`Rated ${n} star${n>1?"s":""}`, 1800, "success");
+      });
+    });
+  }
+
+  // Favorite toggle on recipe page
+  document.getElementById("fave-recipe-btn")?.addEventListener("click", () => {
+    const isNow = toggleFave(r.id);
+    document.getElementById("fave-recipe-btn").textContent = isNow ? "❤️ Favorited" : "🤍 Favorite";
+    showToast(isNow ? "Added to favorites" : "Removed from favorites", 2000, isNow ? "success" : "info");
+    render();
+  });
+
+  // Notes auto-save
+  const noteArea = document.getElementById("recipe-note");
+  const noteSaved = document.getElementById("note-saved");
+  let noteSaveTimer;
+  noteArea?.addEventListener("input", () => {
+    clearTimeout(noteSaveTimer);
+    noteSaveTimer = setTimeout(() => {
+      setNote(r.id, noteArea.value);
+      if (noteSaved) { noteSaved.style.opacity = "1"; setTimeout(() => noteSaved.style.opacity = "0", 1500); }
+    }, 700);
+  });
+
+  // Copy recipe as text
+  document.getElementById("copy-text-btn")?.addEventListener("click", async () => {
+    const lines = [`${r.title}\n${"─".repeat(r.title.length)}`, r.description || "", "",
+      `⏱ ${r.totalMinutes||"?"} min  🍽 ${r.servings||"?"} servings`, "",
+      "INGREDIENTS", ...(r.ingredients||[]).map(i => `• ${i.qty||""} ${i.unit||""} ${i.name||""}${i.notes?" ("+i.notes+")":""}`.trim()),
+      "", "STEPS", ...(r.steps||[]).map((s,i) => `${i+1}. ${s}`),
+      ...(r.tips?.length ? ["", "TIPS", ...r.tips.map(t => `• ${t}`)] : [])];
+    try { await navigator.clipboard.writeText(lines.join("\n")); showToast("Recipe copied as text!", 2500, "success"); }
+    catch { showToast("Couldn't copy — try selecting and copying manually", 3000, "error"); }
+  });
+
+  // Read aloud
+  let utterance = null;
+  document.getElementById("read-aloud-btn")?.addEventListener("click", () => {
+    if (window.speechSynthesis?.speaking) { window.speechSynthesis.cancel(); showToast("Stopped", 1500); return; }
+    const text = `${r.title}. ${r.description||""}. Ingredients: ${(r.ingredients||[]).map(i=>`${i.qty||""} ${i.unit||""} ${i.name||""}`).join(", ")}. Steps: ${(r.steps||[]).join(". ")}`;
+    utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.9;
+    window.speechSynthesis.speak(utterance);
+    showToast("Reading aloud — tap again to stop", 3000);
+  });
+
+  // Might also like — load suggestions
+  const mltGrid = document.getElementById("might-like-grid");
+  if (mltGrid) {
+    listRecipes("").then(all => {
+      const others = all.filter(x => x.id !== r.id).slice(0, 8);
+      const recTags = new Set([...(r.tags||[]).map(t=>t.toLowerCase()), r.cuisine?.toLowerCase()].filter(Boolean));
+      const scored = others.map(x => {
+        const xTags = new Set([...(x.tags||[]).map(t=>t.toLowerCase()), x.cuisine?.toLowerCase()].filter(Boolean));
+        const shared = [...recTags].filter(t => xTags.has(t)).length;
+        return { ...x, _score: shared };
+      }).sort((a,b) => b._score - a._score).slice(0, 4);
+      if (scored.length === 0) { mltGrid.innerHTML = `<div style="font-size:13px;color:var(--muted)">Generate more recipes to see suggestions.</div>`; return; }
+      mltGrid.innerHTML = scored.map(x => `
+        <div class="might-like-card" data-rec-id="${escapeHtml(x.id)}">
+          <div class="mlt">${escapeHtml(x.title)}</div>
+          <div class="mlm">${x.totalMinutes ? `⏱ ${x.totalMinutes} min ·` : ""} ${escapeHtml(x.cuisine || (x.tags||[])[0] || "")}</div>
+        </div>`).join("");
+      mltGrid.querySelectorAll("[data-rec-id]").forEach(c => c.addEventListener("click", () => openRecipe(c.dataset.recId)));
+    }).catch(() => { mltGrid.innerHTML = ""; });
+  }
   document.getElementById("shop-add-btn").addEventListener("click", () => {
     if (shoppingCart.includes(r.id)) { shoppingCart = shoppingCart.filter(x => x !== r.id); showToast("Removed from shopping list", 2000, "info"); }
     else { shoppingCart.push(r.id); showToast("Added to shopping list", 2000, "success"); }
@@ -781,7 +1062,6 @@ function renderRecipe(el) {
   function applyScale(f) {
     scaleFactor = Math.max(0.25, Math.min(8, f));
     document.getElementById("scale-val").textContent = scaleFactor + "×";
-    // Re-render ingredient quantities scaled
     document.querySelectorAll(".ing-qty").forEach((qtyEl, i) => {
       const orig = currentRecipe.ingredients[i];
       if (!orig) return;
@@ -792,7 +1072,6 @@ function renderRecipe(el) {
         qtyEl.textContent = `${rounded}${orig.unit ? " " + orig.unit : ""}`;
       }
     });
-    // Show scaling warnings if non-1x
     let warnHost = document.getElementById("scale-warn");
     if (scaleFactor !== 1) {
       if (!warnHost) {
@@ -801,10 +1080,8 @@ function renderRecipe(el) {
         warnHost.style.cssText = "padding:8px 14px;margin:8px 0;background:#fef3c7;border-radius:8px;font-size:11px;color:#92400e";
         document.querySelector(".recipe-actions").after(warnHost);
       }
-      warnHost.innerHTML = `📏 Scaled ${scaleFactor}× — don't blindly scale salt, baking soda, yeast, or spices linearly. Cook time changes too. ${currentRecipe.scalingNotes ? `<br><strong>Author note:</strong> ${escapeHtml(currentRecipe.scalingNotes)}` : ""}`;
-    } else if (warnHost) {
-      warnHost.remove();
-    }
+      warnHost.innerHTML = `📏 Scaled ${scaleFactor}× — don't blindly scale salt, baking soda, yeast, or spices linearly. ${currentRecipe.scalingNotes ? `<br><strong>Author note:</strong> ${escapeHtml(currentRecipe.scalingNotes)}` : ""}`;
+    } else if (warnHost) { warnHost.remove(); }
   }
   document.getElementById("scale-dn").addEventListener("click", () => applyScale(scaleFactor <= 1 ? scaleFactor / 2 : scaleFactor - 1));
   document.getElementById("scale-up").addEventListener("click", () => applyScale(scaleFactor < 1 ? scaleFactor * 2 : scaleFactor + 1));
@@ -845,7 +1122,7 @@ function renderRecipe(el) {
     const progress = startProgress(document.getElementById("refine-progress"), "refine");
     try {
       const refined = await refineRecipe(currentRecipe, text);
-      refined.id = currentRecipe.id; // keep same id
+      refined.id = currentRecipe.id;
       const saved = await saveRecipe(refined, "update");
       currentRecipe = saved;
       progress.done(); inp.value = ""; render();
@@ -954,7 +1231,34 @@ document.getElementById("search").addEventListener("input", (e) => {
 });
 document.getElementById("brand").addEventListener("click", () => { view = "library"; searchQuery = ""; document.getElementById("search").value = ""; render(); });
 
-// Cmd+K command palette — global, opens an overlay with quick actions
+// Dark mode toggle
+const darkBtn = document.getElementById("dark-btn");
+const savedTheme = localStorage.getItem("knoxcook:theme") || "light";
+if (savedTheme === "dark") { document.documentElement.setAttribute("data-theme", "dark"); darkBtn.textContent = "☀️"; }
+darkBtn.addEventListener("click", () => {
+  const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+  document.documentElement.setAttribute("data-theme", isDark ? "light" : "dark");
+  darkBtn.textContent = isDark ? "🌙" : "☀️";
+  localStorage.setItem("knoxcook:theme", isDark ? "light" : "dark");
+});
+
+// / keyboard shortcut to focus search
+document.addEventListener("keydown", (e) => {
+  if (e.key === "/" && document.activeElement?.tagName !== "INPUT" && document.activeElement?.tagName !== "TEXTAREA") {
+    e.preventDefault();
+    const s = document.getElementById("search");
+    if (s) { s.focus(); s.select(); }
+  }
+});
+
+// Back-to-top button
+const bttBtn = document.createElement("button");
+bttBtn.className = "back-to-top"; bttBtn.title = "Back to top"; bttBtn.textContent = "↑";
+document.body.appendChild(bttBtn);
+bttBtn.addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
+window.addEventListener("scroll", () => bttBtn.classList.toggle("visible", window.scrollY > 400));
+
+// Cmd+K command palette
 document.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openPalette(); }
 });
@@ -971,6 +1275,7 @@ function openPalette() {
   document.body.appendChild(overlay);
   const actions = [
     { label: "🍳 Generate new recipe", action: () => { view = "library"; composeMode = "ai"; render(); } },
+    { label: "❤️ My favorites", action: () => { view = "library"; libraryFilter = "faves"; render(); } },
     { label: "📷 Cook from my fridge", action: () => { view = "library"; composeMode = "fridge"; render(); } },
     { label: "🎲 Random recipe", action: openRandomRecipe },
     { label: "🛒 Open shopping list", action: () => { view = "shopping"; render(); } },
@@ -979,7 +1284,7 @@ function openPalette() {
     { label: "✨ Open Sites", action: () => window.location.href = "https://knox-sites.vercel.app" },
     { label: "💪 Open Nexus (fitness)", action: () => window.location.href = "https://life-nexus-organizer.vercel.app" },
   ];
-  function render(q = "") {
+  function renderPalette(q = "") {
     const filteredActions = actions.filter(a => !q || a.label.toLowerCase().includes(q.toLowerCase()));
     const filteredRecs = q ? recs.filter((r) => (r.title + r.description).toLowerCase().includes(q.toLowerCase())).slice(0, 5) : [];
     const html = [
@@ -996,8 +1301,8 @@ function openPalette() {
   function esc(e) { if (e.key === "Escape") close(); }
   document.addEventListener("keydown", esc);
   overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
-  document.getElementById("cmd-input").addEventListener("input", e => render(e.target.value));
-  render();
+  document.getElementById("cmd-input").addEventListener("input", e => renderPalette(e.target.value));
+  renderPalette();
 }
 // Cache last-loaded recipes for palette search
 const _origList = listRecipes;
