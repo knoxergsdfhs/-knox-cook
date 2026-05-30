@@ -173,6 +173,27 @@
   .nut-bar-wrap { margin-top:4px; }
   .nut-bar { height:6px; border-radius:999px; background:var(--border); overflow:hidden; margin-top:3px; }
   .nut-bar-fill { height:100%; border-radius:999px; transition:width 0.6s ease; }
+  /* Serving scaler */
+  .scaler-row { display:flex;align-items:center;gap:10px;padding:6px 0;margin-bottom:10px;background:var(--bg-2);border-radius:10px;padding:8px 12px; }
+  .scaler-btn { background:var(--bg);border:1px solid var(--border);border-radius:6px;width:28px;height:28px;font-size:16px;font-weight:800;cursor:pointer;display:grid;place-items:center;line-height:1;color:var(--accent); }
+  .scaler-btn:hover { border-color:var(--primary);color:var(--primary); }
+  .scaler-val { font-weight:700;font-size:15px;min-width:60px;text-align:center; }
+  /* Meal Plan */
+  .mplan-grid { display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-top:10px; }
+  .mplan-day { background:white;border:1px solid var(--border);border-radius:10px;overflow:hidden; }
+  .mplan-day-header { background:var(--bg-2);padding:6px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--accent); }
+  .mplan-slot { padding:6px 8px;border-top:1px solid var(--border-soft);min-height:36px;cursor:pointer;transition:background 0.1s; }
+  .mplan-slot:hover { background:var(--bg-2); }
+  .mplan-slot.filled { background:rgba(220,38,38,0.04); }
+  .mplan-slot-label { font-size:10px;color:var(--muted-2);font-weight:600;text-transform:uppercase;letter-spacing:0.3px;margin-bottom:2px; }
+  .mplan-slot-title { font-size:11px;font-weight:700;color:var(--text);line-height:1.3; }
+  .mplan-slot-clear { font-size:10px;color:var(--primary);float:right;cursor:pointer; }
+  @media (max-width:720px) { .mplan-grid { grid-template-columns:repeat(2,1fr); } }
+  /* Collections */
+  .coll-pill { display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:999px;background:var(--bg);border:1px solid var(--border);font-size:11px;font-weight:600;cursor:pointer;transition:all 0.12s; }
+  .coll-pill:hover, .coll-pill.active { background:var(--primary);color:white;border-color:var(--primary); }
+  .ing-sub-btn { background:none;border:none;font-size:10px;color:var(--muted);cursor:pointer;padding:0 4px;font-family:inherit;font-weight:600; }
+  .ing-sub-btn:hover { color:var(--accent); }
 </style>
 </head>
 <body>
@@ -332,16 +353,54 @@ function startProgress(host, kind) {
 }
 
 // ---- state + routes ----------------------------------------------
-let view = "library";  // library | recipe | edit | shopping | auth
+let view = "library";  // library | recipe | edit | shopping | auth | mealplan | collections
 let currentRecipe = null;
 let composeMode = "ai";   // ai | url | fridge
 let searchQuery = "";
 let librarySort = "newest"; // newest | most-made | most-viewed | fastest
-let libraryFilter = "all"; // all | faves | mine | quick
+let libraryFilter = "all"; // all | faves | mine | quick | ingredients
+let ingredientFilter = ""; // comma-separated ingredient names for "I have…" filter
 let shoppingCart = JSON.parse(localStorage.getItem("knoxcook:cart") || "[]");
 let selectedCuisine = "";
 const EXAMPLES = ["Tonkotsu ramen with chashu", "30-minute weeknight tacos al pastor", "Pumpkin spice latte from scratch", "Sourdough discard pancakes", "Vegan chocolate chip cookies", "Thai basil chicken (pad krapow)", "Crispy oven-fried buffalo cauliflower", "Classic French onion soup", "Butter chicken from scratch", "Korean bibimbap bowl", "Homemade sushi rice + rolls", "Shakshuka with feta"];
 const CUISINES = ["🇮🇹 Italian","🇯🇵 Japanese","🇲🇽 Mexican","🇮🇳 Indian","🇨🇳 Chinese","🇰🇷 Korean","🇹🇭 Thai","🇫🇷 French","🇲🇦 Mediterranean","🥗 Vegan","🏃 High-protein","⚡ Under 30 min"];
+
+// ---- Collections helpers ----------------------------------------
+function getCollections() { try { return JSON.parse(localStorage.getItem("knoxcook:collections") || "{}"); } catch { return {}; } }
+function saveCollections(c) { localStorage.setItem("knoxcook:collections", JSON.stringify(c)); }
+function createCollection(name) {
+  const c = getCollections();
+  const id = "col_" + Date.now();
+  c[id] = { id, name, recipeIds: [], createdAt: new Date().toISOString() };
+  saveCollections(c);
+  return id;
+}
+function deleteCollection(id) { const c = getCollections(); delete c[id]; saveCollections(c); }
+function addToCollection(colId, recipeId) {
+  const c = getCollections();
+  if (!c[colId]) return;
+  if (!c[colId].recipeIds.includes(recipeId)) c[colId].recipeIds.push(recipeId);
+  saveCollections(c);
+}
+function removeFromCollection(colId, recipeId) {
+  const c = getCollections();
+  if (!c[colId]) return;
+  c[colId].recipeIds = c[colId].recipeIds.filter(x => x !== recipeId);
+  saveCollections(c);
+}
+function getCollectionsForRecipe(recipeId) {
+  const c = getCollections();
+  return Object.values(c).filter(col => col.recipeIds.includes(recipeId));
+}
+
+// ---- Meal Planner helpers ----------------------------------------
+function getMealPlan() { try { return JSON.parse(localStorage.getItem("knoxcook:mealplan") || "{}"); } catch { return {}; } }
+function setMealPlanSlot(day, slot, recipeId) {
+  const p = getMealPlan();
+  if (recipeId === null) { delete p[day + ":" + slot]; } else { p[day + ":" + slot] = recipeId; }
+  localStorage.setItem("knoxcook:mealplan", JSON.stringify(p));
+}
+function getMealPlanSlot(day, slot) { return getMealPlan()[day + ":" + slot] || null; }
 
 // ---- Favorites & ratings & notes helpers -------------------------
 function getFaves() { try { return JSON.parse(localStorage.getItem("knoxcook:faves") || "[]"); } catch { return []; } }
@@ -391,6 +450,8 @@ function render() {
   if (view === "recipe") return renderRecipe(el);
   if (view === "edit") return renderEdit(el);
   if (view === "shopping") return renderShopping(el);
+  if (view === "mealplan") return renderMealPlan(el);
+  if (view === "collections") return renderCollections(el);
   return renderLibrary(el);
 }
 
@@ -491,12 +552,19 @@ function renderLibrary(el) {
       <button class="filter-tab ${libraryFilter === 'faves' ? 'active' : ''}" data-filt="faves">❤️ Favorites${faves.length > 0 ? ` (${faves.length})` : ""}</button>
       ${session ? `<button class="filter-tab ${libraryFilter === 'mine' ? 'active' : ''}" data-filt="mine">👤 Mine</button>` : ""}
       <button class="filter-tab ${libraryFilter === 'quick' ? 'active' : ''}" data-filt="quick">⚡ Under 30 min</button>
+      <button class="filter-tab ${libraryFilter === 'ingredients' ? 'active' : ''}" data-filt="ingredients">🥘 I have…</button>
     </div>
+    ${libraryFilter === 'ingredients' ? `<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+      <input type="text" id="ing-search-input" placeholder="Enter ingredients you have, e.g. chicken, garlic, lemon" style="flex:1;padding:9px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;font-family:inherit" value="${escapeHtml(ingredientFilter)}" />
+      <button class="btn btn-secondary" id="ing-clear-btn" style="padding:9px 12px;font-size:12px">Clear</button>
+    </div>` : ""}
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
       <span style="font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:0.5px">Sort:</span>
       <button class="ex-chip ${librarySort === 'newest' ? 'active' : ''}" data-sort="newest">Newest</button>
       <button class="ex-chip ${librarySort === 'most-made' ? 'active' : ''}" data-sort="most-made">Most made</button>
       <button class="ex-chip ${librarySort === 'most-viewed' ? 'active' : ''}" data-sort="most-viewed">Trending</button>
+      <button class="btn btn-secondary" id="mealplan-btn" style="padding:7px 14px;font-size:12px">📅 Meal Plan</button>
+      <button class="btn btn-secondary" id="collections-btn" style="padding:7px 14px;font-size:12px">📂 Collections${Object.keys(getCollections()).length > 0 ? ' (' + Object.keys(getCollections()).length + ')' : ''}</button>
       <button class="ex-chip ${librarySort === 'fastest' ? 'active' : ''}" data-sort="fastest">⚡ Fastest first</button>
       <div style="flex:1"></div>
       ${shoppingCart.length > 0 ? `<button class="btn btn-primary" id="shop-btn" style="padding:7px 14px;font-size:12px">🛒 List (${shoppingCart.length})</button>` : ""}
@@ -547,7 +615,19 @@ function renderLibrary(el) {
   document.getElementById("fridge-photo")?.addEventListener("change", runFridge);
   el.querySelectorAll("[data-sort]").forEach(b => b.addEventListener("click", () => { librarySort = b.dataset.sort; renderLibrary(el); }));
   el.querySelectorAll("[data-filt]").forEach(b => b.addEventListener("click", () => { libraryFilter = b.dataset.filt; renderLibrary(el); }));
+  const ingInput = document.getElementById("ing-search-input");
+  if (ingInput) {
+    ingInput.addEventListener("input", () => {
+      ingredientFilter = ingInput.value;
+      clearTimeout(ingInput._t);
+      ingInput._t = setTimeout(() => renderLibrary(el), 350);
+    });
+    ingInput.focus();
+  }
+  document.getElementById("ing-clear-btn")?.addEventListener("click", () => { ingredientFilter = ""; renderLibrary(el); });
   document.getElementById("shop-btn")?.addEventListener("click", () => { view = "shopping"; render(); });
+  document.getElementById("mealplan-btn")?.addEventListener("click", () => { view = "mealplan"; render(); });
+  document.getElementById("collections-btn")?.addEventListener("click", () => { view = "collections"; render(); });
 
   const gridHost = document.getElementById("recipe-grid");
   gridHost.innerHTML = `<div class="empty"><div class="spinner"></div><br>Loading recipes…</div>`;
@@ -557,6 +637,13 @@ function renderLibrary(el) {
     if (libraryFilter === "faves") recs = recs.filter(r => faves.includes(r.id));
     if (libraryFilter === "mine" && session) recs = recs.filter(r => r.author && (r.author.toLowerCase() === session.name?.toLowerCase() || r.author === session.email));
     if (libraryFilter === "quick") recs = recs.filter(r => (r.totalMinutes || r.cookMinutes || 999) <= 30);
+    if (libraryFilter === "ingredients" && ingredientFilter.trim()) {
+      const terms = ingredientFilter.split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
+      recs = recs.filter(r => {
+        const ingText = (r.ingredients || []).map(i => (i.item || i.name || i || "").toLowerCase()).join(" ");
+        return terms.some(t => ingText.includes(t));
+      });
+    }
     // Apply sort
     if (librarySort === "most-made") recs = [...recs].sort((a, b) => (b.timesMade || 0) - (a.timesMade || 0));
     if (librarySort === "fastest") recs = [...recs].sort((a, b) => (a.totalMinutes || a.cookMinutes || 999) - (b.totalMinutes || b.cookMinutes || 999));
@@ -877,7 +964,9 @@ function renderRecipe(el) {
           ${r.doneness ? `<div style="background:var(--bg-2);border-left:3px solid var(--primary);padding:10px 14px;margin-top:18px;border-radius:0 8px 8px 0"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--accent);margin-bottom:4px">How to tell it's done</div><div style="font-size:13px;line-height:1.5">${escapeHtml(r.doneness)}</div></div>` : ""}
           ${(r.commonMistakes || []).length ? `<div class="section-title" style="margin-top:18px">⚠️ Common mistakes to avoid</div><ul class="tips" style="list-style:none;padding:0;margin:0">${r.commonMistakes.map(m => `<li style="color:#991b1b">⚠ ${escapeHtml(m)}</li>`).join("")}</ul>` : ""}
           ${(r.tips || []).length ? `<div class="section-title" style="margin-top:18px">Pro tips</div><ul class="tips" style="list-style:none;padding:0;margin:0">${r.tips.map(t => `<li>💡 ${escapeHtml(t)}</li>`).join("")}</ul>` : ""}
-          ${(r.substitutions || []).length ? `<div class="section-title" style="margin-top:18px">Substitutions that work</div><ul class="tips" style="list-style:none;padding:0;margin:0">${r.substitutions.map(s => `<li>↔ <strong>${escapeHtml(s.for)}</strong> → ${escapeHtml(s.use)}${s.note ? ` <span style="color:var(--muted);font-size:12px">(${escapeHtml(s.note)})</span>` : ""}</li>`).join("")}</ul>` : ""}
+          <div id="substitutions-section">
+          ${(r.substitutions || []).length ? `<div class="section-title" style="margin-top:18px;display:flex;align-items:center;justify-content:space-between">Substitutions that work <button class="btn btn-secondary" id="gen-subs-btn" style="padding:3px 10px;font-size:11px">↻ Refresh</button></div><ul class="tips" style="list-style:none;padding:0;margin:0">${r.substitutions.map(s => `<li>↔ <strong>${escapeHtml(s.for)}</strong> → ${escapeHtml(s.use)}${s.note ? ` <span style="color:var(--muted);font-size:12px">(${escapeHtml(s.note)})</span>` : ""}</li>`).join("")}</ul>` : `<div style="margin-top:18px"><button class="btn btn-secondary" id="gen-subs-btn" style="padding:6px 14px;font-size:12px">↔ Generate substitutions with AI</button></div>`}
+          </div>
           ${r.pairings && (r.pairings.side || r.pairings.drink || r.pairings.dessert) ? `<div class="section-title" style="margin-top:18px">Serve it with</div><div style="font-size:13px;display:grid;gap:4px">${r.pairings.side ? `<div>🍽 <strong>Side:</strong> ${escapeHtml(r.pairings.side)}</div>` : ""}${r.pairings.drink ? `<div>🥂 <strong>Drink:</strong> ${escapeHtml(r.pairings.drink)}</div>` : ""}${r.pairings.dessert ? `<div>🍰 <strong>Dessert:</strong> ${escapeHtml(r.pairings.dessert)}</div>` : ""}</div>` : ""}
           ${r.storage ? `<div class="section-title" style="margin-top:18px">Storage</div><div style="font-size:13px;display:grid;gap:4px">${r.storage.fridgeDays ? `<div>🧊 <strong>Fridge:</strong> ${r.storage.fridgeDays} days</div>` : ""}${r.storage.freezerMonths ? `<div>❄️ <strong>Freezer:</strong> ${r.storage.freezerMonths} months</div>` : ""}${r.storage.reheatMethod ? `<div>🔥 <strong>Reheat:</strong> ${escapeHtml(r.storage.reheatMethod)}</div>` : ""}</div>` : ""}
           ${r.scalingNotes ? `<div style="background:#fef3c7;border-radius:8px;padding:10px 14px;margin-top:18px;font-size:12px"><strong>📏 If you scale this:</strong> ${escapeHtml(r.scalingNotes)}</div>` : ""}
@@ -899,6 +988,7 @@ function renderRecipe(el) {
           <span id="scale-val" style="font-weight:700;min-width:30px;text-align:center">1×</span>
           <button class="btn-ghost" id="scale-up" style="padding:2px 6px">+</button>
         </div>
+        <button class="btn btn-secondary" id="coll-btn" title="Add to collection">📂 Collect</button>
         <div style="flex:1"></div>
         <button class="btn-ghost" id="del-btn" style="color:#dc2626">Delete</button>
       </div>
@@ -949,6 +1039,29 @@ function renderRecipe(el) {
   document.getElementById("edit-btn").addEventListener("click", () => { view = "edit"; render(); });
   document.getElementById("print-btn").addEventListener("click", () => window.print());
   document.getElementById("cook-mode-btn").addEventListener("click", () => openCookingMode(currentRecipe));
+
+  // AI generate substitutions
+  document.getElementById("gen-subs-btn")?.addEventListener("click", async function() {
+    const btn = this;
+    btn.disabled = true; btn.textContent = "↻ Generating…";
+    const secEl = document.getElementById("substitutions-section");
+    try {
+      const updated = await refineRecipe(currentRecipe, "Add a comprehensive substitutions section — for each key ingredient, suggest 1-2 practical substitutions with short notes on what changes in the final dish. Return as valid substitutions array.");
+      if (updated.substitutions && updated.substitutions.length) {
+        currentRecipe = { ...currentRecipe, substitutions: updated.substitutions };
+        if (secEl) secEl.innerHTML = `<div class="section-title" style="margin-top:18px;display:flex;align-items:center;justify-content:space-between">Substitutions that work <button class="btn btn-secondary" id="gen-subs-btn" style="padding:3px 10px;font-size:11px">↻ Refresh</button></div><ul class="tips" style="list-style:none;padding:0;margin:0">${updated.substitutions.map(s => `<li>↔ <strong>${escapeHtml(s.for)}</strong> → ${escapeHtml(s.use)}${s.note ? ` <span style="color:var(--muted);font-size:12px">(${escapeHtml(s.note)})</span>` : ""}</li>`).join("")}</ul>`;
+        // Re-wire the new btn
+        secEl.querySelector("#gen-subs-btn")?.addEventListener("click", arguments.callee);
+        showToast("Substitutions generated", 2500, "success");
+      } else {
+        showToast("No substitutions returned", 2500, "warn");
+        btn.disabled = false; btn.textContent = "↔ Generate substitutions";
+      }
+    } catch (ex) {
+      showToast(ex.message || "AI failed", 3000, "error");
+      btn.disabled = false; btn.textContent = "↔ Generate substitutions";
+    }
+  });
 
   // Ingredient checkboxes
   const ingChecked = {};
@@ -1112,6 +1225,39 @@ function renderRecipe(el) {
     try { await deleteRecipe(r.id); showToast("Deleted", 2000, "success"); view = "library"; render(); }
     catch (e) { showToast(e.message || "Failed", 4000, "error"); }
   });
+
+  // Add to collection
+  document.getElementById("coll-btn")?.addEventListener("click", () => {
+    const cols = getCollections();
+    const colList = Object.values(cols);
+    if (colList.length === 0) {
+      const name = prompt("Create a collection first — enter a name:");
+      if (!name?.trim()) return;
+      const id = createCollection(name.trim());
+      addToCollection(id, r.id);
+      showToast(`Added to "${name.trim()}"`, 2500, "success");
+      return;
+    }
+    const opts = colList.map((c, i) => `${i + 1}. ${c.name}${c.recipeIds.includes(r.id) ? " ✓" : ""}`).join("\n");
+    const input = prompt(`Choose a collection (enter number):\n${opts}\n\n${colList.length + 1}. Create new collection`);
+    if (!input) return;
+    const idx = parseInt(input) - 1;
+    if (idx === colList.length) {
+      const name = prompt("New collection name:");
+      if (!name?.trim()) return;
+      const id = createCollection(name.trim());
+      addToCollection(id, r.id);
+      showToast(`Added to "${name.trim()}"`, 2500, "success");
+    } else if (idx >= 0 && idx < colList.length) {
+      if (colList[idx].recipeIds.includes(r.id)) {
+        removeFromCollection(colList[idx].id, r.id);
+        showToast(`Removed from "${colList[idx].name}"`, 2500, "info");
+      } else {
+        addToCollection(colList[idx].id, r.id);
+        showToast(`Added to "${colList[idx].name}"`, 2500, "success");
+      }
+    }
+  });
   document.querySelectorAll("[data-suggest]").forEach(b => b.addEventListener("click", () => { document.getElementById("refine-input").value = b.dataset.suggest; document.getElementById("refine-input").focus(); }));
   const rbtn = document.getElementById("refine-btn");
   async function doRefine() {
@@ -1192,6 +1338,171 @@ function renderEdit(el) {
       view = "recipe"; render();
     } catch (e) { showToast(e.message || "Save failed", 4000, "error"); }
   });
+}
+
+// ---- Meal Planner -----------------------------------------------
+async function renderMealPlan(el) {
+  const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  const SLOTS = ["Breakfast","Lunch","Dinner"];
+  const plan = getMealPlan();
+
+  el.innerHTML = `
+    <div style="margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <button class="btn-ghost" id="back">← Library</button>
+      <div class="page-title" style="margin-bottom:0">Weekly Meal Plan</div>
+      <button class="btn btn-primary" id="gen-list-btn" style="margin-left:auto;padding:9px 16px;font-size:13px">🛒 Generate shopping list</button>
+    </div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:14px">Click any slot to assign a recipe from your library. Click a filled slot to change or clear it.</div>
+    <div class="mplan-grid" id="mplan-grid"></div>
+    <div id="mplan-picker" style="display:none;margin-top:14px;background:white;border:1px solid var(--border);border-radius:12px;padding:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <strong id="picker-title" style="font-size:14px"></strong>
+        <button class="btn-ghost" id="picker-close">✕</button>
+      </div>
+      <input type="text" id="picker-search" placeholder="Search recipes…" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);font-size:13px;font-family:inherit;margin-bottom:8px" />
+      <div id="picker-list" style="max-height:240px;overflow-y:auto;display:grid;gap:4px"></div>
+      <div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px">
+        <button class="btn-ghost" id="picker-clear" style="color:#dc2626;font-size:12px">🗑 Clear this slot</button>
+      </div>
+    </div>
+  `;
+  document.getElementById("back").addEventListener("click", () => { view = "library"; render(); });
+
+  let pickerTarget = null;
+  let allRecs = [];
+  try { allRecs = await listRecipes(""); } catch {}
+
+  function renderGrid() {
+    const plan = getMealPlan();
+    const grid = document.getElementById("mplan-grid");
+    if (!grid) return;
+    grid.innerHTML = DAYS.map(day => `
+      <div class="mplan-day">
+        <div class="mplan-day-header">${day}</div>
+        ${SLOTS.map(slot => {
+          const recId = plan[day + ":" + slot];
+          const rec = recId ? allRecs.find(r => r.id === recId) : null;
+          return `<div class="mplan-slot${rec ? " filled" : ""}" data-day="${escapeHtml(day)}" data-slot="${escapeHtml(slot)}">
+            <div class="mplan-slot-label">${slot}</div>
+            ${rec ? `<div class="mplan-slot-title">${escapeHtml(rec.title)}</div>` : `<div style="font-size:10px;color:var(--muted-2)">+ Add</div>`}
+          </div>`;
+        }).join("")}
+      </div>
+    `).join("");
+    grid.querySelectorAll(".mplan-slot").forEach(slot => slot.addEventListener("click", () => {
+      pickerTarget = { day: slot.dataset.day, slot: slot.dataset.slot };
+      document.getElementById("picker-title").textContent = `${slot.dataset.day} — ${slot.dataset.slot}`;
+      document.getElementById("picker-search").value = "";
+      document.getElementById("mplan-picker").style.display = "block";
+      renderPickerList("");
+    }));
+  }
+
+  function renderPickerList(q) {
+    const filtered = q ? allRecs.filter(r => (r.title || "").toLowerCase().includes(q.toLowerCase())) : allRecs;
+    const host = document.getElementById("picker-list");
+    if (!host) return;
+    host.innerHTML = filtered.slice(0, 30).map(r => `
+      <button class="btn-secondary" data-pick-id="${escapeHtml(r.id)}" style="width:100%;text-align:left;padding:8px 12px;font-size:13px;border-radius:8px;background:var(--bg-2)">
+        ${escapeHtml(r.title)}${r.totalMinutes ? ` <span style="color:var(--muted);font-size:11px">⏱${r.totalMinutes}m</span>` : ""}
+      </button>
+    `).join("") || `<div style="font-size:13px;color:var(--muted);padding:8px">No recipes found</div>`;
+    host.querySelectorAll("[data-pick-id]").forEach(b => b.addEventListener("click", () => {
+      if (pickerTarget) setMealPlanSlot(pickerTarget.day, pickerTarget.slot, b.dataset.pickId);
+      document.getElementById("mplan-picker").style.display = "none";
+      renderGrid();
+    }));
+  }
+
+  document.getElementById("picker-close").addEventListener("click", () => document.getElementById("mplan-picker").style.display = "none");
+  document.getElementById("picker-clear").addEventListener("click", () => {
+    if (pickerTarget) setMealPlanSlot(pickerTarget.day, pickerTarget.slot, null);
+    document.getElementById("mplan-picker").style.display = "none";
+    renderGrid();
+  });
+  document.getElementById("picker-search").addEventListener("input", (e) => renderPickerList(e.target.value));
+
+  document.getElementById("gen-list-btn").addEventListener("click", () => {
+    // Collect all recipe IDs in the current meal plan and add to shopping cart
+    const ids = [...new Set(Object.values(getMealPlan()))];
+    if (ids.length === 0) return showToast("No recipes in your meal plan yet", 3000, "info");
+    for (const id of ids) { if (!shoppingCart.includes(id)) shoppingCart.push(id); }
+    localStorage.setItem("knoxcook:cart", JSON.stringify(shoppingCart));
+    showToast(`${ids.length} recipe${ids.length===1?"":"s"} added to shopping list`, 3000, "success");
+    view = "shopping"; render();
+  });
+
+  renderGrid();
+}
+
+// ---- Collections ------------------------------------------------
+async function renderCollections(el) {
+  el.innerHTML = `
+    <div style="margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <button class="btn-ghost" id="back">← Library</button>
+      <div class="page-title" style="margin-bottom:0">My Collections</div>
+      <button class="btn btn-primary" id="new-coll-btn" style="margin-left:auto;padding:9px 16px;font-size:13px">+ New Collection</button>
+    </div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:14px">Organize your favorite recipes into custom folders.</div>
+    <div id="coll-list"></div>
+  `;
+  document.getElementById("back").addEventListener("click", () => { view = "library"; render(); });
+  document.getElementById("new-coll-btn").addEventListener("click", () => {
+    const name = prompt("Collection name:");
+    if (!name?.trim()) return;
+    createCollection(name.trim());
+    renderCollections(el);
+  });
+
+  async function paintCollections() {
+    const cols = getCollections();
+    const host = document.getElementById("coll-list");
+    if (!host) return;
+    const colList = Object.values(cols);
+    if (colList.length === 0) {
+      host.innerHTML = `<div class="empty"><div class="empty-icon">📂</div><h2>No collections yet</h2><p>Create a folder, then add recipes to it from the recipe page.</p></div>`;
+      return;
+    }
+    let allRecs = [];
+    try { allRecs = await listRecipes(""); } catch {}
+    host.innerHTML = colList.map(col => {
+      const recs = allRecs.filter(r => col.recipeIds.includes(r.id));
+      return `
+        <div style="background:white;border:1px solid var(--border);border-radius:12px;margin-bottom:12px;overflow:hidden">
+          <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+            <strong style="font-size:15px">📂 ${escapeHtml(col.name)}</strong>
+            <div style="display:flex;gap:6px">
+              <span style="font-size:12px;color:var(--muted)">${recs.length} recipe${recs.length===1?"":"s"}</span>
+              <button class="btn-ghost" data-del-col="${escapeHtml(col.id)}" style="font-size:11px;color:#dc2626;padding:2px 8px">Delete</button>
+            </div>
+          </div>
+          <div style="padding:10px 16px;display:flex;flex-wrap:wrap;gap:8px">
+            ${recs.length === 0 ? `<div style="font-size:13px;color:var(--muted)">No recipes yet — add from any recipe page.</div>` :
+              recs.map(r => `<div style="background:var(--bg-2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:13px;font-weight:600;cursor:pointer;flex:1;min-width:140px;max-width:220px" data-open-rec="${escapeHtml(r.id)}">
+                ${escapeHtml(r.title)}
+                <button data-rem-col="${escapeHtml(col.id)}" data-rem-rec="${escapeHtml(r.id)}" style="float:right;background:none;border:none;color:#dc2626;cursor:pointer;font-size:11px;padding:0 2px">✕</button>
+              </div>`).join("")
+            }
+          </div>
+        </div>
+      `;
+    }).join("");
+    host.querySelectorAll("[data-del-col]").forEach(b => b.addEventListener("click", () => {
+      if (!confirm("Delete this collection?")) return;
+      deleteCollection(b.dataset.delCol);
+      paintCollections();
+    }));
+    host.querySelectorAll("[data-open-rec]").forEach(b => b.addEventListener("click", (e) => {
+      if (e.target.closest("[data-rem-col]")) return;
+      openRecipe(b.dataset.openRec);
+    }));
+    host.querySelectorAll("[data-rem-col]").forEach(b => b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      removeFromCollection(b.dataset.remCol, b.dataset.remRec);
+      paintCollections();
+    }));
+  }
+  paintCollections();
 }
 
 function renderAuth(el) {
